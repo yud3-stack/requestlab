@@ -72,7 +72,7 @@ Seed sonrası demo kullanıcının ID'si çıktıdan alınarak `DEV_USER_ID` vey
 
 Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL` alır. Yerel çalışmada config ve seed kök `.env` dosyasını opsiyonel yükler; `.env` yoksa process environment kullanılabilir. API server ve runtime Prisma Client ise `DATABASE_URL` kullanır; böylece Supabase Transaction Pooler (6543) uygulama runtime'ında, Session Pooler (5432) Prisma migration işlemlerinde ayrıştırılır.
 
-`.github/workflows/database-migration.yml` yalnızca `workflow_dispatch` ile manuel çalışır. `DIRECT_URL` yalnızca GitHub Actions `secrets.DIRECT_URL` üzerinden verilir. Workflow mevcut migration'ları deploy eder; seed, migration üretimi ve reset çalıştırmaz.
+`.github/workflows/database-migration.yml` yalnızca `workflow_dispatch` ile manuel çalışır. `DIRECT_URL` secret'ı job environment içinde hem `DIRECT_URL` hem `DATABASE_URL` olarak kullanılır; başka secret veya bağlantı değeri yazdırılmaz. Workflow mevcut migration'ları deploy eder; seed, migration üretimi ve reset çalıştırmaz.
 
 ## Çalıştırılan doğrulamalar
 
@@ -87,15 +87,18 @@ Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL`
 - `pnpm db:validate`: Başarılı; Supabase bağlantı URI formatı Prisma tarafından kabul edildi.
 - `pnpm db:generate`: Başarılı.
 - `pnpm db:validate`: Başarılı; Prisma config yüklendi ve CLI datasource `DIRECT_URL` üzerinden doğrulandı.
+- GitHub Actions `Database Migration`: başarılı; mevcut migration deploy edildi.
+- `pnpm db:seed` iki kez: başarılı; seed idempotence doğrulandı.
+- Gerçek API smoke testleri: başarılı; health, proje listesi, environment listesi, event ingestion, event listesi/detayı, hassas veri maskeleme, duplicate event `409` ve invalid API key `401` doğrulandı.
 - `corepack pnpm install --frozen-lockfile`: başarılı.
 - `corepack pnpm test`: başarılı, 10 test.
 - `corepack pnpm typecheck`: başarılı.
 - `corepack pnpm lint`: başarılı.
 - `corepack pnpm build`: başarılı.
 
-Docker CLI bu ortamda bulunmadı. `DIRECT_URL` ile `pnpm db:migrate` denemesi bağlantı zaman aşımı nedeniyle tamamlanamadı; migration geçmişi değiştirilmedi ve 6543 üzerinden migration çalıştırılmadı. Bu nedenle seed ve gerçek PostgreSQL event round-trip doğrulaması çalıştırılmadı. Session Pooler bağlantısının erişilebilir olduğu ortamda `pnpm db:migrate`, iki kez `pnpm db:seed` ile doğrulama sürdürülmelidir.
+Docker CLI bu ortamda bulunmadı; gerekli migration GitHub Actions üzerinden çalıştırıldı. Migration geçmişi değiştirilmedi, yeni migration üretilmedi ve 6543 Transaction Pooler üzerinden migration çalıştırılmadı. Gerçek Supabase veritabanı round-trip doğrulaması tamamlandı. Event ID, API key ve bağlantı değerleri loglanmadı veya dokümana yazılmadı.
 
-GitHub Actions migration workflow'u bu yerel ortamda çalıştırılmadı; yalnızca manuel `workflow_dispatch` ile çalışacak şekilde hazırlandı. Workflow validation, client generation ve mevcut migration deploy adımlarını içerir; seed, reset ve migration generation içermez.
+GitHub Actions migration workflow'u manuel `workflow_dispatch` ile başarıyla kullanıldı. Workflow validation, client generation ve mevcut migration deploy adımlarını içerir; seed, reset ve migration generation içermez.
 
 ## Bilinen sınırlamalar
 

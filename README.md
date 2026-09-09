@@ -143,7 +143,7 @@ Prisma migration komutları `packages/database/prisma.config.ts` üzerinden `DIR
 
 Yerel ağ Session Pooler'a erişemiyorsa mevcut migration'ları manuel olarak GitHub Actions üzerinden uygulayın:
 
-1. Repository Settings > Secrets and variables > Actions bölümünde `DIRECT_URL` secret'ını tanımlayın.
+1. Repository Settings > Secrets and variables > Actions bölümünde yalnızca `DIRECT_URL` secret'ını tanımlayın. Workflow bunu hem `DIRECT_URL` hem de Prisma schema validation uyumluluğu için `DATABASE_URL` olarak sağlar.
 2. Actions > `Database Migration` workflow'unu açın.
 3. `Run workflow` ile manuel çalıştırın.
 
@@ -155,4 +155,4 @@ Node SDK, gelişmiş demo API hata senaryoları, frontend dashboard, replay iş 
 
 ## Supabase doğrulama notu
 
-Supabase CLI bağlantı ayrımı Prisma schema validation'dan geçti. `DIRECT_URL` ile migration deploy denemesi bağlantı zaman aşımına uğradı; bu çalışma ortamında seed ve gerçek PostgreSQL event smoke testleri tamamlanamadı. Session Pooler erişilebilir olduğunda `pnpm db:migrate`, iki kez `pnpm db:seed` ve README'deki API örnekleri sırayla çalıştırılmalıdır.
+Supabase CLI bağlantı ayrımı Prisma schema validation'dan geçti. Migration GitHub Actions üzerinden başarıyla uygulandı ve seed iki kez çalıştırılarak idempotence doğrulandı. Gerçek API smoke testlerinde health, proje/environment sorguları, event ingestion, liste/detay, hassas veri maskeleme, duplicate event ve geçersiz API key akışları doğrulandı. Bağlantı adresleri ve secret değerleri dokümana yazılmaz.
