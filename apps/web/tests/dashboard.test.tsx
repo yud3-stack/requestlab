@@ -1,0 +1,171 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
+import { App } from "../src/main";
+import { api } from "../src/api";
+
+vi.mock("../src/api", async () => {
+  return {
+    ApiError: class extends Error {},
+    api: {
+      projects: vi.fn(),
+      environments: vi.fn(),
+      health: vi.fn(),
+      stats: vi.fn(),
+      events: vi.fn(),
+      event: vi.fn(),
+      keys: vi.fn()
+    }
+  };
+});
+
+const project = {
+  id: "p1",
+  name: "Shop API",
+  slug: "shop-api",
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z"
+};
+const environment = {
+  id: "e1",
+  projectId: "p1",
+  name: "Test",
+  slug: "test",
+  type: "TEST",
+  baseUrl: null,
+  replayEnabled: true,
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z"
+};
+const event = {
+  id: "evt1",
+  externalEventId: "external",
+  environmentId: "e1",
+  requestId: "req1",
+  method: "POST",
+  path: "/api/orders",
+  route: "/api/orders",
+  statusCode: 500,
+  durationMs: 142,
+  errorType: "ShippingAddressError",
+  errorMessage: "Missing address",
+  occurredAt: "2026-01-01T12:00:00Z",
+  createdAt: "2026-01-01T12:00:00Z"
+};
+const stats = {
+  totalRequests: 4,
+  errorCount: 2,
+  errorRate: 0.5,
+  averageDurationMs: 80,
+  statusDistribution: [
+    { statusCode: 200, count: 2 },
+    { statusCode: 500, count: 2 }
+  ],
+  topEndpoints: [{ path: "/api/orders", count: 2, errorCount: 2 }],
+  recentErrors: [event]
+};
+
+function renderApp(initial = "/") {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initial]}>
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+}
+function setup() {
+  vi.mocked(api.projects).mockResolvedValue({ data: [project] });
+  vi.mocked(api.environments).mockResolvedValue({ data: [environment] });
+  vi.mocked(api.health).mockResolvedValue({ status: "ok", service: "api" });
+  vi.mocked(api.stats).mockResolvedValue({ data: stats });
+  vi.mocked(api.events).mockResolvedValue({
+    data: [event],
+    pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 }
+  });
+  vi.mocked(api.event).mockResolvedValue({
+    data: {
+      ...event,
+      requestHeaders: { authorization: "[REDACTED]" },
+      requestBody: { password: "[REDACTED]", token: "[REDACTED]" },
+      responseHeaders: {},
+      responseBody: {},
+      query: {},
+      stackTrace: null
+    }
+  });
+  vi.mocked(api.keys).mockResolvedValue({
+    data: [
+      {
+        id: "k1",
+        projectId: "p1",
+        name: "Development",
+        keyPrefix: "rlk_safe",
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+        createdAt: "2026-01-01T00:00:00Z"
+      }
+    ]
+  });
+}
+
+afterEach(cleanup);
+beforeEach(() => {
+  vi.clearAllMocks();
+  localStorage.clear();
+  setup();
+});
+
+describe("dashboard", () => {
+  it("shows loading state", () => {
+    vi.mocked(api.projects).mockReturnValue(new Promise(() => undefined));
+    renderApp();
+    expect(screen.getByText("Projeler yükleniyor...")).toBeInTheDocument();
+  });
+  it("shows real overview data", async () => {
+    renderApp();
+    expect(await screen.findByText("Toplam istek")).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
+  });
+  it("shows an understandable API error", async () => {
+    vi.mocked(api.projects).mockRejectedValue(new Error("offline"));
+    renderApp();
+    expect(await screen.findByText("Project verisi alınamadı")).toBeInTheDocument();
+  });
+  it("renders empty requests state", async () => {
+    vi.mocked(api.events).mockResolvedValue({
+      data: [],
+      pagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 }
+    });
+    renderApp("/requests");
+    expect(await screen.findByText("Henüz event bulunmuyor")).toBeInTheDocument();
+  });
+  it("opens event detail and switches request/response tabs", async () => {
+    renderApp("/requests");
+    expect(await screen.findByText("/api/orders")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("/api/orders"));
+    expect(await screen.findByText("İstek detayı")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Request" }));
+    expect(await screen.findByText("Headers")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Response" }));
+    expect(await screen.findByText("Body")).toBeInTheDocument();
+  });
+  it("renders redacted values and never renders an API key", async () => {
+    renderApp("/settings");
+    expect(await screen.findByText("rlk_safe••••")).toBeInTheDocument();
+    expect(screen.queryByText(/plaintext|secret/i)).not.toBeInTheDocument();
+  });
+  it("opens and closes the mobile menu", async () => {
+    renderApp();
+    const open = (await screen.findAllByRole("button", { name: "Menüyü aç" }))[0];
+    fireEvent.click(open);
+    expect(document.querySelector(".sidebar.open")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Menüyü kapat" })[0]);
+    await waitFor(() => expect(document.querySelector(".sidebar.open")).not.toBeInTheDocument());
+  });
+});

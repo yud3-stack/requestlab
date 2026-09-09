@@ -112,6 +112,65 @@ export function registerEventRoutes(app: FastifyInstance, context: AppContext): 
     }
   );
 
+  app.get<{ Params: { projectId: string }; Querystring: Record<string, string | undefined> }>(
+    "/api/projects/:projectId/events/stats",
+    async (request) => {
+      const { projectId } = request.params;
+      await requireProjectMember(request, context, projectId);
+      const query = parseListQuery(request.query);
+      const where: Prisma.RequestEventWhereInput = { projectId };
+      if (query.environmentId) where.environmentId = query.environmentId;
+      if (query.from || query.to) where.occurredAt = { gte: query.from, lte: query.to };
+      const [totalRequests, errorCount, duration, statusRows, endpointRows, recentErrors] =
+        await Promise.all([
+          context.db.requestEvent.count({ where }),
+          context.db.requestEvent.count({ where: { ...where, statusCode: { gte: 400 } } }),
+          context.db.requestEvent.aggregate({ where, _avg: { durationMs: true } }),
+          context.db.requestEvent.groupBy({
+            by: ["statusCode"],
+            where,
+            _count: { _all: true },
+            orderBy: { statusCode: "asc" }
+          }),
+          context.db.requestEvent.groupBy({
+            by: ["path"],
+            where,
+            _count: { _all: true },
+            orderBy: { _count: { path: "desc" } },
+            take: 5
+          }),
+          context.db.requestEvent.findMany({
+            where: { ...where, statusCode: { gte: 400 } },
+            orderBy: { occurredAt: "desc" },
+            take: 5
+          })
+        ]);
+      const topEndpoints = await Promise.all(
+        endpointRows.map(async (row) => ({
+          path: row.path,
+          count: row._count._all,
+          errorCount: await context.db.requestEvent.count({
+            where: { ...where, path: row.path, statusCode: { gte: 400 } }
+          })
+        }))
+      );
+      return {
+        data: {
+          totalRequests,
+          errorCount,
+          errorRate: totalRequests ? errorCount / totalRequests : 0,
+          averageDurationMs: Math.round(duration._avg.durationMs ?? 0),
+          statusDistribution: statusRows.map((row) => ({
+            statusCode: row.statusCode,
+            count: row._count._all
+          })),
+          topEndpoints,
+          recentErrors: recentErrors.map(toSummary)
+        }
+      };
+    }
+  );
+
   app.get<{ Params: { projectId: string; eventId: string } }>(
     "/api/projects/:projectId/events/:eventId",
     async (request) => {

@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import cors from "@fastify/cors";
 import { prisma } from "@requestlab/database";
 import type { ServiceHealth } from "@requestlab/shared";
 import { loadConfig, type AppConfig } from "./config/index.js";
@@ -17,6 +18,13 @@ export type AppOptions = {
 export function createApp(options: AppOptions = {}): FastifyInstance {
   const context: AppContext = { db: options.db ?? prisma, config: options.config ?? loadConfig() };
   const app = Fastify({ logger: true, bodyLimit: 1024 * 1024 });
+
+  const allowedOrigins = context.config.corsAllowedOrigins ?? [];
+  app.register(cors, {
+    origin: (origin, callback) => callback(null, !origin || allowedOrigins.includes(origin)),
+    allowedHeaders: ["Content-Type", "X-RequestLab-User-Id", "X-RequestLab-Key"],
+    methods: ["GET", "POST", "DELETE", "OPTIONS"]
+  });
 
   app.get<{ Reply: ServiceHealth }>("/health", async () => ({ status: "ok", service: "api" }));
   registerProjectRoutes(app, context);

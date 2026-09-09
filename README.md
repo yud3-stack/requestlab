@@ -2,14 +2,14 @@
 
 RequestLab, gerçek uygulamalarda oluşan API hatalarını kaydetmek, incelemek ve test ortamında yeniden çalıştırmak için geliştirilen bir geliştirici aracıdır.
 
-## Aşama 3 durumu
+## Aşama 4 durumu
 
-PostgreSQL veri modeli, migration/seed altyapısı ve Event API tamamlandı. Node SDK, Fastify entegrasyonu ve SDK ile çalışan demo hata senaryoları eklendi. Frontend dashboard, replay ve Redis/worker işleme bu aşamada yoktur.
+PostgreSQL veri modeli, Event API, Node SDK ve gerçek Supabase verileriyle çalışan frontend dashboard tamamlandı. Replay, Redis/worker işleme ve gerçek kullanıcı login'i bu aşamada yoktur.
 
 ## Teknolojiler ve klasörler
 
 - `apps/api`: Fastify API, auth, maskeleme ve modüler route'lar
-- `apps/web`: Aşama 1 minimum React sayfası
+- `apps/web`: React/Vite dashboard; overview, istekler, event detay drawer'ı, ayarlar ve responsive mobil menü
 - `apps/worker`: Aşama 1 başlangıç worker'ı; bu aşamada kullanılmaz
 - `apps/demo-api`: SDK entegrasyonlu demo ürün, sipariş, login ve yavaş istek senaryoları
 - `packages/sdk-node`: Node.js event capture SDK'sı ve Fastify hook entegrasyonu
@@ -41,7 +41,9 @@ PowerShell için `.env` oluşturma:
 Copy-Item .env.example .env
 ```
 
-`DATABASE_URL`, uygulama runtime'ı için Supabase Transaction Pooler bağlantısıdır ve port 6543 kullanır. `DIRECT_URL`, yalnızca Prisma CLI ve migration işlemleri için Supabase Session Pooler bağlantısıdır ve port 5432 kullanır. Her iki değişken de gerçek değerleri `.env` içinde tutar; `.env.example` içinde boştur. Prisma CLI config'i `DIRECT_URL`, çalışma zamanı Prisma Client ise `DATABASE_URL` kullanır. `DEV_USER_ID`, kullanıcı header'ı verilmediğinde development modunda kullanılacak kullanıcı kimliğidir. Seed çıktısındaki demo kullanıcı ID'sini veya `.env` içinde bilinen bir ID'yi kullanın. `DEV_INGESTION_KEY` yerel seed anahtarının kaynağıdır; gerçek anahtar commit edilmemelidir.
+`DATABASE_URL`, uygulama runtime'ı için Supabase Transaction Pooler bağlantısıdır ve port 6543 kullanır. `DIRECT_URL`, yalnızca Prisma CLI ve migration işlemleri için Supabase Session Pooler bağlantısıdır ve port 5432 kullanır. Her iki değişken de gerçek değerleri `.env` içinde tutar; `.env.example` içinde boştur. Prisma CLI config'i `DIRECT_URL`, çalışma zamanı Prisma Client ise `DATABASE_URL` kullanır. `DEV_USER_ID`, kullanıcı header'ı verilmediğinde development modunda kullanılacak kullanıcı kimliğidir. Seed çıktısındaki demo kullanıcı ID'sini veya `.env` içinde bilinen bir ID'yi kullanın. `DEV_INGESTION_KEY` yerel seed anahtarının kaynağıdır; gerçek anahtar commit edilmemelidir. `CORS_ALLOWED_ORIGINS`, virgülle ayrılmış frontend origin listesidir; development varsayılanları localhost ve 127.0.0.1 port 5173'tür. Production'da origin listesi açıkça verilmelidir; wildcard kullanılmaz.
+
+Frontend için `apps/web/.env.local` dosyasında yalnızca `VITE_REQUESTLAB_API_URL` ve `VITE_REQUESTLAB_DEV_USER_ID` tanımlanır; örnek `apps/web/.env.example` içindedir. Vite config'inde `envDir` açıkça `apps/web` olarak ayarlandığı için bu dosya yüklenir. `VITE_REQUESTLAB_DEV_USER_ID`, `pnpm db:seed` çıktısındaki seed kullanıcısının ID'siyle aynı olmalıdır; bu değer client tarafından `x-requestlab-user-id` header'ı olarak gönderilir. Frontend ingestion API key, `DATABASE_URL` veya `DIRECT_URL` içermez. Bu development header'ı production kimlik doğrulaması değildir.
 
 SDK kullanan demo API için `.env` içinde `REQUESTLAB_API_URL`, `REQUESTLAB_API_KEY` ve isteğe bağlı `REQUESTLAB_ENVIRONMENT` değişkenlerini tanımlayın. SDK yapılandırılmamışsa demo API yine başlar ve yalnızca yerel senaryoları çalıştırır.
 
@@ -144,6 +146,8 @@ Demo API:
 
 ```bash
 pnpm --filter @requestlab/demo-api dev
+pnpm --filter @requestlab/web dev
+pnpm exec node scripts/real-smoke.mjs
 ```
 
 Senaryo endpointleri `GET /api/products`, `POST /api/orders`, `POST /api/login`, `GET /api/slow` ve `GET /api/scenarios` yollarıdır. SDK varsayılan olarak yalnızca hata eventlerini yakalar; demo için `REQUESTLAB_CAPTURE_MODE=all` kullanılabilir.
@@ -162,7 +166,11 @@ Workflow Ubuntu runner üzerinde Node.js ve pnpm kurar, frozen lockfile ile bağ
 
 ## Sonraki aşamalar
 
-Frontend dashboard, replay iş akışı, BullMQ/Redis görev işleme ve gerçek kullanıcı login sistemi sonraki aşamalardadır.
+Replay iş akışı, BullMQ/Redis görev işleme, gerçek kullanıcı login sistemi ve production deployment sonraki aşamalardır. Replay düğmesi bu aşamada ağ isteği göndermez.
+
+## Dashboard
+
+Dashboard gerçek API'den proje, environment, event liste/detay, API key metadata ve `/api/projects/:projectId/events/stats` verilerini okur. Genel Bakış istatistikleri sayfa örnekleminden değil PostgreSQL agregasyonundan üretilir. İstekler ekranı URL filtreleri, debounce arama, pagination, otomatik yenileme ve mobil event görünümünü destekler. Geçici development user header davranışı production auth yerine geçmez.
 
 ## Supabase doğrulama notu
 

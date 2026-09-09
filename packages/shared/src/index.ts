@@ -126,3 +126,13 @@ export type PaginatedResponse<T> = {
   data: T[];
   pagination: Pagination;
 };
+
+export type EventStats = {
+  totalRequests: number;
+  errorCount: number;
+  errorRate: number;
+  averageDurationMs: number;
+  statusDistribution: Array<{ statusCode: number; count: number }>;
+  topEndpoints: Array<{ path: string; count: number; errorCount: number }>;
+  recentErrors: RequestEventSummary[];
+};

@@ -306,3 +306,72 @@ describe("event API authorization and isolation", () => {
     await app.close();
   });
 });
+
+describe("CORS and development identity", () => {
+  it("handles an allowed preflight and advertises the user header", async () => {
+    const app = createApp({
+      db: dbMock(),
+      config: {
+        nodeEnv: "development",
+        apiPort: 3001,
+        corsAllowedOrigins: ["http://localhost:5173", "http://127.0.0.1:5173"]
+      }
+    });
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/api/projects",
+      headers: {
+        origin: "http://localhost:5173",
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "x-requestlab-user-id"
+      }
+    });
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe("http://localhost:5173");
+    expect(response.headers["access-control-allow-headers"]).toContain("X-RequestLab-User-Id");
+    await app.close();
+  });
+
+  it("includes CORS headers on an unauthorized response and denies unknown origins", async () => {
+    const app = createApp({
+      db: dbMock(),
+      config: {
+        nodeEnv: "development",
+        apiPort: 3001,
+        corsAllowedOrigins: ["http://localhost:5173"]
+      }
+    });
+    const allowed = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+      headers: { origin: "http://localhost:5173" }
+    });
+    expect(allowed.statusCode).toBe(401);
+    expect(allowed.headers["access-control-allow-origin"]).toBe("http://localhost:5173");
+
+    const denied = await app.inject({
+      method: "OPTIONS",
+      url: "/api/projects",
+      headers: {
+        origin: "http://evil.example",
+        "access-control-request-method": "GET"
+      }
+    });
+    expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
+    await app.close();
+  });
+
+  it("uses the supplied development identity for project listing", async () => {
+    const db = dbMock({
+      user: { findUnique: async ({ where }: { where: { id: string } }) => ({ id: where.id }) },
+      project: { findMany: async () => [] }
+    });
+    const app = createApp({
+      db,
+      config: { nodeEnv: "development", devUserId: "seed-user-id", apiPort: 3001 }
+    });
+    const response = await app.inject({ method: "GET", url: "/api/projects" });
+    expect(response.statusCode).toBe(200);
+    await app.close();
+  });
+});

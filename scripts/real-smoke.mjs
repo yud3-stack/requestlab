@@ -51,8 +51,13 @@ const before = await request(`${apiUrl}/api/projects`, { headers: userHeaders() 
 assert(before.status === 200, "project lookup");
 const projectId = before.body.data.find((project) => project.slug === "shop-api")?.id;
 assert(projectId, "seed project");
+const stats = await request(`${apiUrl}/api/projects/${projectId}/events/stats`, {
+  headers: userHeaders()
+});
+assert(stats.status === 200, "project event stats");
 console.log("seed data: present");
 console.log("seed/sdk key: present and SHA-256 equal");
+console.log("project stats: 200");
 start("demo", "apps/demo-api/src/server.ts", runtimeEnv);
 await waitFor(`${demoUrl}/health`);
 
