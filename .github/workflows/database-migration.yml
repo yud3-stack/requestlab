@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
