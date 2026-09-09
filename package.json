@@ -8,10 +8,10 @@
   },
   "scripts": {
     "dev": "concurrently -n web,api,worker,demo-api -c blue,green,yellow,magenta \"corepack pnpm --filter @requestlab/web dev\" \"corepack pnpm --filter @requestlab/api dev\" \"corepack pnpm --filter @requestlab/worker dev\" \"corepack pnpm --filter @requestlab/demo-api dev\"",
-    "build": "corepack pnpm -r --if-present build",
+    "build": "corepack pnpm -r --workspace-concurrency=1 --if-present build",
     "lint": "eslint .",
-    "typecheck": "corepack pnpm -r --if-present build && corepack pnpm -r --if-present typecheck",
-    "test": "vitest run",
+    "typecheck": "corepack pnpm -r --workspace-concurrency=1 --if-present build && corepack pnpm -r --if-present typecheck",
+    "test": "corepack pnpm -r --workspace-concurrency=1 --if-present build && vitest run",
     "docker:up": "docker compose --env-file .env -f infrastructure/docker-compose.yml up -d",
     "docker:down": "docker compose --env-file .env -f infrastructure/docker-compose.yml down",
     "db:generate": "corepack pnpm --filter @requestlab/database db:generate",

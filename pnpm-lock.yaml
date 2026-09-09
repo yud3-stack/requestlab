@@ -55,9 +55,15 @@ importers:
 
   apps/demo-api:
     dependencies:
+      "@requestlab/sdk-node":
+        specifier: workspace:*
+        version: link:../../packages/sdk-node
       "@requestlab/shared":
         specifier: workspace:*
         version: link:../../packages/shared
+      dotenv:
+        specifier: ^16.6.1
+        version: 16.6.1
       fastify:
         specifier: ^5.5.0
         version: 5.12.3
@@ -116,6 +122,18 @@ importers:
       tsx:
         specifier: ^4.20.5
         version: 4.23.13
+
+  packages/sdk-node:
+    dependencies:
+      "@requestlab/shared":
+        specifier: workspace:*
+        version: link:../shared
+      fastify:
+        specifier: ^5.5.0
+        version: 5.12.3
+      fastify-plugin:
+        specifier: ^5.0.1
+        version: 5.1.0
 
   packages/shared:
     dependencies:
@@ -1705,6 +1723,12 @@ packages:
     resolution:
       {
         integrity: sha512-dODXrIxlS9JSdgAnhIUKOosKV1oMtU2VtVw87QRaHzyl5jxO290Ii5tEZfCfzfWNHi3jKWwBSdQj0qIyshdZdQ==
+      }
+
+  fastify-plugin@5.1.0:
+    resolution:
+      {
+        integrity: sha512-FAIDA8eovSt5qcDgcBvDuX/v0Cjz0ohGhENZ/wpc3y+oZCY2afZ9Baqql3g/lC+OHRnciQol4ww7tuthOb9idw==
       }
 
   fastify@5.12.3:
@@ -3690,6 +3714,8 @@ snapshots:
   fast-uri@3.1.7: {}
 
   fast-uri@4.1.4: {}
+
+  fastify-plugin@5.1.0: {}
 
   fastify@5.12.3:
     dependencies:

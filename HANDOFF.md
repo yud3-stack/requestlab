@@ -15,6 +15,15 @@ RequestLab, gerçek uygulamalardaki API hatalarını kaydetmek, incelemek ve tes
 - Ortak Zod sözleşmeleri `packages/shared` içine taşındı.
 - `app.ts` / `server.ts` ayrımıyla Fastify test edilebilir hale getirildi.
 
+## Aşama 3'te tamamlananlar
+
+- `packages/sdk-node` içinde bounded queue, timeout, fail-open gönderim ve hassas veri maskeleme destekli Node SDK eklendi.
+- SDK, circular/Date/Error/Buffer değerlerini güvenli biçimde serialize eder ve request/response body limitlerini uygular.
+- Fastify `onRequest`/`onResponse` hook entegrasyonu, request ID koruma/üretme ve flush desteği eklendi.
+- `apps/demo-api` ürün, sipariş, login, slow request ve scenario endpointleriyle oluşturuldu.
+- Demo API SDK yapılandırması olmadan da çalışır; yapılandırıldığında başarılı, hatalı ve yavaş istekleri event olarak yakalar.
+- Demo API için idempotency, deterministic hata senaryoları ve SDK integration testleri eklendi.
+
 ## Veritabanı modelleri
 
 `User`, `Project`, `ProjectMember`, `Environment`, `ApiKey`, `RequestEvent` ve `AuditEvent` modelleri `packages/database/prisma/schema.prisma` içindedir. Project/external event, project/environment ve sorgu filtreleri için gerekli unique constraint ve indeksler migration SQL'de bulunur.
@@ -69,6 +78,11 @@ Seed sonrası demo kullanıcının ID'si çıktıdan alınarak `DEV_USER_ID` vey
 - `packages/database/prisma/seed.ts`: seed
 - `packages/shared/src/index.ts`: ortak Zod şemaları ve DTO tipleri
 - `apps/api/tests/api.test.ts`: route ve güvenlik testleri
+- `packages/sdk-node/src/client.ts`: SDK client ve event gönderimi
+- `packages/sdk-node/src/fastify.ts`: Fastify hook entegrasyonu
+- `packages/sdk-node/src/queue.ts`: bounded fail-open queue
+- `apps/demo-api/src/app.ts`: demo API factory ve SDK kurulumu
+- `apps/demo-api/tests/demo.test.ts`: demo senaryoları ve SDK capture testleri
 
 Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL` alır. Yerel çalışmada config ve seed kök `.env` dosyasını opsiyonel yükler; `.env` yoksa process environment kullanılabilir. API server ve runtime Prisma Client ise `DATABASE_URL` kullanır; böylece Supabase Transaction Pooler (6543) uygulama runtime'ında, Session Pooler (5432) Prisma migration işlemlerinde ayrıştırılır.
 
@@ -80,7 +94,7 @@ Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL`
 - `corepack pnpm db:generate`: başarılı
 - `corepack pnpm typecheck`: başarılı
 - `corepack pnpm lint`: başarılı
-- `corepack pnpm test`: başarılı, 10 test
+- `corepack pnpm test`: başarılı, 20 test
 - `corepack pnpm build`: başarılı
 - Prisma schema validation: başarılı.
 - Derlenmiş API `/health`: başarılı, `{"status":"ok","service":"api"}`.
@@ -90,11 +104,16 @@ Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL`
 - GitHub Actions `Database Migration`: başarılı; mevcut migration deploy edildi.
 - `pnpm db:seed` iki kez: başarılı; seed idempotence doğrulandı.
 - Gerçek API smoke testleri: başarılı; health, proje listesi, environment listesi, event ingestion, event listesi/detayı, hassas veri maskeleme, duplicate event `409` ve invalid API key `401` doğrulandı.
+- Gerçek Supabase SDK smoke testi: başarılı; API ve demo API ayrı süreçlerde çalıştırıldı, health kontrolleri zaman sınırıyla tamamlandı, ürün `200`, eksik shipping address `500`, hatalı login `401` ve slow request `200` event'leri doğrulandı. 5 yeni event içinde slow duration `1507ms`, password/token/authorization masking, API erişilemezken demo API fail-open davranışı, SDK flush ve süreç cleanup doğrulandı.
 - `corepack pnpm install --frozen-lockfile`: başarılı.
 - `corepack pnpm test`: başarılı, 10 test.
 - `corepack pnpm typecheck`: başarılı.
 - `corepack pnpm lint`: başarılı.
 - `corepack pnpm build`: başarılı.
+- SDK ve demo API build/typecheck: başarılı.
+- `corepack pnpm lint`: başarılı.
+- `corepack pnpm exec prettier --check .`: başarılı.
+- `git diff --check`: başarılı.
 
 Docker CLI bu ortamda bulunmadı; gerekli migration GitHub Actions üzerinden çalıştırıldı. Migration geçmişi değiştirilmedi, yeni migration üretilmedi ve 6543 Transaction Pooler üzerinden migration çalıştırılmadı. Gerçek Supabase veritabanı round-trip doğrulaması tamamlandı. Event ID, API key ve bağlantı değerleri loglanmadı veya dokümana yazılmadı.
 
@@ -105,10 +124,10 @@ GitHub Actions migration workflow'u manuel `workflow_dispatch` ile başarıyla k
 - Geçici kullanıcı header auth gerçek login yerine geçmez.
 - Gerçek PostgreSQL integration test suite'i yoktur; route testleri `app.inject` ve mock DB ile çalışır.
 - API key hash'i genel amaçlı SHA-256'dır; düşük hacimli ingestion anahtarı doğrulaması için kullanılmıştır.
-- Redis, worker, Node SDK, replay ve dashboard bu aşamada kullanılmaz.
+- Redis, replay, dashboard ve gerçek kullanıcı login sistemi bu aşamada kullanılmaz.
 
-## Aşama 3 için başlangıç noktası
+## Aşama 4 için başlangıç noktası
 
-Önce `apps/api/src/modules/events` sözleşmelerini sabitleyip Node SDK'nin bu Event API'ye bağlanması önerilir. Ardından demo hata senaryoları ve frontend dashboard eklenebilir. Replay/worker geliştirmesi bu aşamanın dışındadır.
+SDK ve demo API tamamlandı. Sonraki aşamada frontend dashboard, replay akışı veya Redis/worker işleme ele alınabilir. Gerçek Supabase SDK smoke testleri, geçerli API key ve URL ile ürün, 500 sipariş, 401 login, slow endpoint ve masking/detail doğrulamalarını kapsamalıdır.
 
 Her sonraki aşamanın sonunda bu dosya güncellenmelidir.
