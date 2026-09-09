@@ -1,0 +1,29 @@
+{
+  "name": "requestlab",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "concurrently -n web,api,worker,demo-api -c blue,green,yellow,magenta \"corepack pnpm --filter @requestlab/web dev\" \"corepack pnpm --filter @requestlab/api dev\" \"corepack pnpm --filter @requestlab/worker dev\" \"corepack pnpm --filter @requestlab/demo-api dev\"",
+    "build": "corepack pnpm -r --if-present build",
+    "lint": "eslint .",
+    "typecheck": "corepack pnpm -r --if-present typecheck",
+    "test": "node -e \"console.log('No tests configured yet.')\"",
+    "docker:up": "docker compose --env-file .env -f infrastructure/docker-compose.yml up -d",
+    "docker:down": "docker compose --env-file .env -f infrastructure/docker-compose.yml down",
+    "db:generate": "corepack pnpm --filter @requestlab/database db:generate",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@requestlab/config": "workspace:*",
+    "@types/node": "^22.15.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.34.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
