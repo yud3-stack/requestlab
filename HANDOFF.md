@@ -2,70 +2,110 @@
 
 ## Projenin amacı
 
-RequestLab, gerçek uygulamalardaki API hatalarını kaydetmek, incelemek ve test ortamında tekrar çalıştırmak için geliştirilen bir geliştirici aracıdır.
+RequestLab, gerçek uygulamalardaki API hatalarını kaydetmek, incelemek ve test ortamında tekrar çalıştırmak için geliştirilen geliştirici aracıdır.
 
-## Tamamlanan aşama
+## Aşama 2'de tamamlananlar
 
-Aşama 1, monorepo ve temel altyapı olarak tamamlandı. Ürün özellikleri eklenmedi.
+- Prisma PostgreSQL modelleri, migration ve tekrar çalıştırılabilir seed eklendi.
+- Proje ve environment CRUD başlangıç endpointleri eklendi.
+- API key üretme, listeleme, iptal etme ve audit kaydı eklendi.
+- API key ile event ingestion ve proje/environment izolasyonu eklendi.
+- Event listesi filtreleme, sayfalama ve detay endpointi eklendi.
+- Hassas veri maskeleme ve payload limitleri eklendi.
+- Ortak Zod sözleşmeleri `packages/shared` içine taşındı.
+- `app.ts` / `server.ts` ayrımıyla Fastify test edilebilir hale getirildi.
 
-## Oluşturulan servisler
+## Veritabanı modelleri
 
-- `apps/web`: React + Vite başlangıç sayfası
-- `apps/api`: Fastify `/health` endpoint'i ve merkezi hata yakalama temeli
-- `apps/demo-api`: Fastify `/health` endpoint'i
-- `apps/worker`: Hazır mesajı yazan minimum worker
-- PostgreSQL ve Redis: Docker Compose servisleri ve health check'leri
+`User`, `Project`, `ProjectMember`, `Environment`, `ApiKey`, `RequestEvent` ve `AuditEvent` modelleri `packages/database/prisma/schema.prisma` içindedir. Project/external event, project/environment ve sorgu filtreleri için gerekli unique constraint ve indeksler migration SQL'de bulunur.
 
-## Kullanılan komutlar
+Production environment için API oluşturma akışında `replayEnabled` varsayılanı `false` olarak uygulanır. Seed de production'ı kapalı oluşturur.
 
-- `pnpm install`: Bağımlılık kurulumu
-- `pnpm dev`: Web, API, worker ve demo API'yi paralel başlatır
-- `pnpm build`: Workspace build'leri
-- `pnpm typecheck`: Strict TypeScript kontrolü
-- `pnpm lint`: ESLint kontrolü
-- `pnpm test`: Henüz test olmadığını kontrollü bildirir
-- `pnpm docker:up` / `pnpm docker:down`: Altyapı servisleri
-- `pnpm db:generate`: Prisma client üretimi
+## Endpoint listesi
+
+- `GET /health`
+- `GET /api/projects`
+- `POST /api/projects`
+- `GET /api/projects/:projectId`
+- `GET /api/projects/:projectId/environments`
+- `POST /api/projects/:projectId/environments`
+- `GET /api/projects/:projectId/api-keys`
+- `POST /api/projects/:projectId/api-keys`
+- `DELETE /api/projects/:projectId/api-keys/:apiKeyId`
+- `POST /api/v1/events`
+- `GET /api/projects/:projectId/events`
+- `GET /api/projects/:projectId/events/:eventId`
+
+## Kimlik doğrulama yaklaşımı
+
+Kullanıcı endpointleri geçici olarak `x-requestlab-user-id` header'ı ile çalışır. Development modunda header yoksa `DEV_USER_ID` kullanılır; production modunda fallback yoktur. Membership kontrolü proje erişiminde yapılır. Ingestion kullanıcı header'ı kullanmaz; `X-RequestLab-Key` prefix adayını bulur, SHA-256 hash'i timing-safe karşılaştırır, revoked/expired anahtarları reddeder ve `lastUsedAt` günceller.
+
+API key plaintext yalnızca oluşturma cevabında bir kez döndürülür. Veritabanında yalnızca `keyPrefix` ve hash saklanır.
+
+## Seed bilgileri
+
+`pnpm db:seed` şu verileri idempotent biçimde oluşturur:
+
+- `demo@requestlab.local` demo kullanıcısı
+- `shop-api` slug'lı `Shop API` projesi
+- Demo kullanıcı için `OWNER` üyeliği
+- development, test ve production environment'ları
+- `DEV_INGESTION_KEY` ile hash'lenen geliştirme API key'i
+
+Seed sonrası demo kullanıcının ID'si çıktıdan alınarak `DEV_USER_ID` veya header olarak kullanılmalıdır.
 
 ## Önemli dosyalar
 
-- `package.json`: Kök workspace script'leri
-- `pnpm-workspace.yaml`: Workspace kapsamı
-- `tsconfig.base.json`: Strict TypeScript tabanı
-- `packages/shared/src/index.ts`: `ServiceHealth` ortak tipi
-- `packages/database/prisma/schema.prisma`: Ürün tablosu içermeyen Prisma şeması
-- `infrastructure/docker-compose.yml`: PostgreSQL ve Redis
-- `.env.example`: Yerel geliştirme değişkenleri
+- `apps/api/src/app.ts`: Fastify uygulama factory'si
+- `apps/api/src/server.ts`: production/dev dinleyici
+- `apps/api/src/modules/*/routes.ts`: modüler route'lar
+- `apps/api/src/lib/auth.ts`: geçici kullanıcı ve membership auth
+- `apps/api/src/lib/api-key-auth.ts`: ingestion key doğrulaması
+- `apps/api/src/lib/masking.ts`: immutable hassas veri temizleme
+- `packages/database/prisma/schema.prisma`: modeller
+- `packages/database/prisma.config.ts`: `DIRECT_URL` kullanan Prisma CLI config'i
+- `.github/workflows/database-migration.yml`: manuel migration workflow'u
+- `packages/database/prisma/migrations/20260909120000_init/migration.sql`: migration
+- `packages/database/prisma/seed.ts`: seed
+- `packages/shared/src/index.ts`: ortak Zod şemaları ve DTO tipleri
+- `apps/api/tests/api.test.ts`: route ve güvenlik testleri
 
-## Teknik kararlar
+Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL` alır. Yerel çalışmada config ve seed kök `.env` dosyasını opsiyonel yükler; `.env` yoksa process environment kullanılabilir. API server ve runtime Prisma Client ise `DATABASE_URL` kullanır; böylece Supabase Transaction Pooler (6543) uygulama runtime'ında, Session Pooler (5432) Prisma migration işlemlerinde ayrıştırılır.
 
-- Node.js 20.19+ ve pnpm 10 hedeflendi.
-- Uygulamalar ESM ve strict TypeScript kullanır.
-- API ve demo API health cevapları `@requestlab/shared` içindeki `ServiceHealth` tipiyle yazılır.
-- Prisma bağlantısı `DATABASE_URL` üzerinden alınır; henüz model/migration eklenmedi.
-- Compose parolası yalnızca yerel geliştirme varsayılanıdır; gerçek sır kullanılmadı.
+`.github/workflows/database-migration.yml` yalnızca `workflow_dispatch` ile manuel çalışır. `DIRECT_URL` yalnızca GitHub Actions `secrets.DIRECT_URL` üzerinden verilir. Workflow mevcut migration'ları deploy eder; seed, migration üretimi ve reset çalıştırmaz.
 
-## Bilinen sorunlar
+## Çalıştırılan doğrulamalar
 
-- Test framework'ü ve ürün testleri henüz yoktur.
-- Worker'da BullMQ görevi işleme yoktur.
-- PostgreSQL için migration veya ürün tablosu yoktur.
-- Docker'ın kurulu/çalışır olması doğrulama ortamına bağlıdır.
+- `corepack pnpm install`: başarılı
+- `corepack pnpm db:generate`: başarılı
+- `corepack pnpm typecheck`: başarılı
+- `corepack pnpm lint`: başarılı
+- `corepack pnpm test`: başarılı, 10 test
+- `corepack pnpm build`: başarılı
+- Prisma schema validation: başarılı.
+- Derlenmiş API `/health`: başarılı, `{"status":"ok","service":"api"}`.
+- `pnpm db:validate`: Başarılı; Supabase bağlantı URI formatı Prisma tarafından kabul edildi.
+- `pnpm db:generate`: Başarılı.
+- `pnpm db:validate`: Başarılı; Prisma config yüklendi ve CLI datasource `DIRECT_URL` üzerinden doğrulandı.
+- `corepack pnpm install --frozen-lockfile`: başarılı.
+- `corepack pnpm test`: başarılı, 10 test.
+- `corepack pnpm typecheck`: başarılı.
+- `corepack pnpm lint`: başarılı.
+- `corepack pnpm build`: başarılı.
 
-## Sonraki aşamada yapılacaklar
+Docker CLI bu ortamda bulunmadı. `DIRECT_URL` ile `pnpm db:migrate` denemesi bağlantı zaman aşımı nedeniyle tamamlanamadı; migration geçmişi değiştirilmedi ve 6543 üzerinden migration çalıştırılmadı. Bu nedenle seed ve gerçek PostgreSQL event round-trip doğrulaması çalıştırılmadı. Session Pooler bağlantısının erişilebilir olduğu ortamda `pnpm db:migrate`, iki kez `pnpm db:seed` ile doğrulama sürdürülmelidir.
 
-Aşama 2'de event veri modelini ve API'sini tasarlayıp eklemek, Prisma tablolarını oluşturmak ve demo API hata senaryolarını eklemek gerekir. SDK, replay ve kapsamlı dashboard sonraki aşamalara bırakılmalıdır.
+GitHub Actions migration workflow'u bu yerel ortamda çalıştırılmadı; yalnızca manuel `workflow_dispatch` ile çalışacak şekilde hazırlandı. Workflow validation, client generation ve mevcut migration deploy adımlarını içerir; seed, reset ve migration generation içermez.
 
-Her sonraki aşamanın sonunda bu `HANDOFF.md` dosyası güncellenmelidir.
+## Bilinen sınırlamalar
 
-## Son doğrulama sonuçları
+- Geçici kullanıcı header auth gerçek login yerine geçmez.
+- Gerçek PostgreSQL integration test suite'i yoktur; route testleri `app.inject` ve mock DB ile çalışır.
+- API key hash'i genel amaçlı SHA-256'dır; düşük hacimli ingestion anahtarı doğrulaması için kullanılmıştır.
+- Redis, worker, Node SDK, replay ve dashboard bu aşamada kullanılmaz.
 
-- `corepack pnpm install`: Başarılı.
-- `corepack pnpm db:generate`: Başarılı; Prisma Client üretildi.
-- `corepack pnpm typecheck`: Başarılı.
-- `corepack pnpm lint`: Başarılı.
-- `corepack pnpm build`: Başarılı; web, API, demo API, worker ve paketler derlendi.
-- `corepack pnpm test`: Başarılı; bu aşamada test bulunmadığı kontrollü bildirildi.
-- Derlenmiş API `/health`: `{"status":"ok","service":"api"}`.
-- Derlenmiş demo API `/health`: `{"status":"ok","service":"demo-api"}`.
-- Docker Compose doğrulaması: Docker CLI ortamda kurulu olmadığı için çalıştırılamadı; Compose dosyası oluşturuldu ve Docker erişimi olan ortamda `docker compose ... config` ile tekrar doğrulanmalı.
+## Aşama 3 için başlangıç noktası
+
+Önce `apps/api/src/modules/events` sözleşmelerini sabitleyip Node SDK'nin bu Event API'ye bağlanması önerilir. Ardından demo hata senaryoları ve frontend dashboard eklenebilir. Replay/worker geliştirmesi bu aşamanın dışındadır.
+
+Her sonraki aşamanın sonunda bu dosya güncellenmelidir.

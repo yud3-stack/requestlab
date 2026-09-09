@@ -2,96 +2,157 @@
 
 RequestLab, gerçek uygulamalarda oluşan API hatalarını kaydetmek, incelemek ve test ortamında yeniden çalıştırmak için geliştirilen bir geliştirici aracıdır.
 
-## Aşama 1 durumu
+## Aşama 2 durumu
 
-Bu sürüm yalnızca monorepo ve temel altyapıyı içerir. Web başlangıç sayfası, API health endpoint'leri, worker başlangıcı, Prisma bağlantı altyapısı ve PostgreSQL/Redis Compose servisleri hazırdır. Hata event API'si, SDK, dashboard özellikleri, demo hata senaryoları ve replay akışı henüz geliştirilmemiştir.
+Bu aşamada PostgreSQL veri modeli, migration/seed altyapısı ve Event API tamamlandı. Proje, environment, ingestion API key ve event listeleme/detay endpointleri kullanılabilir. Node SDK, gelişmiş demo hata senaryoları, frontend dashboard, replay ve Redis/worker işleme bu aşamada yoktur.
 
-## Teknolojiler
+## Teknolojiler ve klasörler
 
-- pnpm workspaces ve TypeScript strict mode
-- React, Vite ve Fastify
-- PostgreSQL, Redis, Prisma
-- Docker Compose, ESLint ve Prettier
-
-## Klasörler
-
-- `apps/web`: Vite tabanlı minimum React arayüzü
-- `apps/api`: RequestLab ana Fastify API'si
-- `apps/worker`: İleride arka plan görevleri için worker başlangıcı
-- `apps/demo-api`: Test senaryoları için Fastify demo API'si
-- `packages/shared`: Uygulamalar arası tipler
-- `packages/database`: Prisma client ve PostgreSQL şeması
-- `packages/config`: Ortak ESLint ve Prettier ayarları
-- `infrastructure`: Docker Compose servisleri
-- `docs`: Proje belgeleri
+- `apps/api`: Fastify API, auth, maskeleme ve modüler route'lar
+- `apps/web`: Aşama 1 minimum React sayfası
+- `apps/worker`: Aşama 1 başlangıç worker'ı; bu aşamada kullanılmaz
+- `apps/demo-api`: Aşama 1 health endpoint'i; demo hata senaryoları sonraki aşamadadır
+- `packages/database`: Prisma client, schema, migration ve seed
+- `packages/shared`: Zod tabanlı ortak request/response sözleşmeleri ve TypeScript tipleri
+- `packages/config`: Merkezi ESLint/Prettier ayarları
+- `infrastructure`: PostgreSQL ve Redis Compose tanımları
 
 ## Gereksinimler
 
 - Node.js 20.19 veya üzeri
 - pnpm 10 veya üzeri
-- Docker Desktop (PostgreSQL ve Redis için)
+- PostgreSQL için Docker Desktop veya erişilebilir bir PostgreSQL
 
-## Kurulum
+## Kurulum ve veritabanı
 
 ```bash
 pnpm install
-Copy-Item .env.example .env
-pnpm db:generate
-```
-
-Unix sistemlerde `.env` oluşturma komutu:
-
-```bash
 cp .env.example .env
+pnpm db:generate
+pnpm docker:up
+pnpm db:migrate
+pnpm db:seed
 ```
 
-`.env.example` içindeki değerler yalnızca yerel geliştirme içindir. Gerçek parola veya API anahtarı içermez; `.env` Git'e eklenmez. Portlar gerektiğinde `.env` üzerinden değiştirilebilir.
+PowerShell için `.env` oluşturma:
 
-## Docker servisleri
+```powershell
+Copy-Item .env.example .env
+```
+
+`DATABASE_URL`, uygulama runtime'ı için Supabase Transaction Pooler bağlantısıdır ve port 6543 kullanır. `DIRECT_URL`, yalnızca Prisma CLI ve migration işlemleri için Supabase Session Pooler bağlantısıdır ve port 5432 kullanır. Her iki değişken de gerçek değerleri `.env` içinde tutar; `.env.example` içinde boştur. Prisma CLI config'i `DIRECT_URL`, çalışma zamanı Prisma Client ise `DATABASE_URL` kullanır. `DEV_USER_ID`, kullanıcı header'ı verilmediğinde development modunda kullanılacak kullanıcı kimliğidir. Seed çıktısındaki demo kullanıcı ID'sini veya `.env` içinde bilinen bir ID'yi kullanın. `DEV_INGESTION_KEY` yerel seed anahtarının kaynağıdır; gerçek anahtar commit edilmemelidir.
+
+Compose servisleri:
 
 ```bash
 pnpm docker:up
 pnpm docker:down
 ```
 
-Compose PostgreSQL'i `requestlab` kullanıcısı, `requestlab_dev` geliştirme parolası ve `requestlab` veritabanı ile başlatır. PostgreSQL ve Redis verileri kalıcı Docker volume'larında tutulur.
-
-## Uygulamaları çalıştırma
-
-Tüm uygulamaları paralel başlatmak için:
+## API'yi çalıştırma
 
 ```bash
 pnpm dev
 ```
 
-Tek tek production benzeri build almak için:
-
-```bash
-pnpm build
-```
-
-Web arayüzü varsayılan olarak `http://localhost:5173`, API `http://localhost:3001`, demo API `http://localhost:3002` adresindedir.
-
-## Health endpoint'leri
+API varsayılan olarak `http://localhost:3001` adresindedir. Sağlık kontrolü:
 
 ```bash
 curl http://localhost:3001/health
-curl http://localhost:3002/health
 ```
 
-Beklenen cevaplar sırasıyla `{"status":"ok","service":"api"}` ve `{"status":"ok","service":"demo-api"}` değerleridir.
+### Geçici geliştirme kimliği
 
-## Yararlı komutlar
+Gerçek login sistemi henüz yoktur. Kullanıcı gerektiren endpointlerde `x-requestlab-user-id` header'ı kullanılabilir. `NODE_ENV=development` iken header yoksa `DEV_USER_ID` fallback'i devreye girer. Production modunda fallback yoktur ve kullanıcı bulunamazsa `401` döner. Proje üyesi olmayan kullanıcı `403` alır.
+
+### API key oluşturma
+
+Proje ve environment endpointleri için üye kullanıcı header'ı gerekir. API key oluşturma yalnızca `OWNER` veya `ADMIN` rolündedir:
 
 ```bash
+curl -X POST http://localhost:3001/api/projects/<PROJECT_ID>/api-keys \
+  -H "content-type: application/json" \
+  -H "x-requestlab-user-id: <USER_ID>" \
+  -d '{"name":"local ingestion"}'
+```
+
+Tam key yalnızca bu oluşturma cevabında bir kez döner. Liste endpointi yalnızca prefix ve metadata döndürür; plaintext veya hash döndürmez.
+
+### Event gönderme
+
+```bash
+curl -X POST http://localhost:3001/api/v1/events \
+  -H "content-type: application/json" \
+  -H "X-RequestLab-Key: rlk_..." \
+  -d '{
+    "externalEventId":"evt_local_001",
+    "environment":"development",
+    "requestId":"req_001",
+    "method":"POST",
+    "path":"/api/orders",
+    "route":"/api/orders",
+    "query":{},
+    "requestHeaders":{"content-type":"application/json","authorization":"Bearer secret"},
+    "requestBody":{"productId":42,"password":"secret"},
+    "responseHeaders":{"content-type":"application/json"},
+    "responseBody":{"error":"ValidationError"},
+    "statusCode":500,
+    "durationMs":324,
+    "errorType":"ValidationError",
+    "errorMessage":"Missing shipping address",
+    "occurredAt":"2026-09-09T10:00:00.000Z"
+  }'
+```
+
+Event aynı proje ve `externalEventId` ile tekrar gönderilirse `409 DUPLICATE_EVENT` döner. API key'in projesine ait olmayan environment kullanılamaz.
+
+### Event listeleme ve detay
+
+```bash
+curl "http://localhost:3001/api/projects/<PROJECT_ID>/events?page=1&pageSize=20&statusCode=500&sortOrder=desc" \
+  -H "x-requestlab-user-id: <USER_ID>"
+
+curl http://localhost:3001/api/projects/<PROJECT_ID>/events/<EVENT_ID> \
+  -H "x-requestlab-user-id: <USER_ID>"
+```
+
+Liste endpointi `page`, `pageSize`, `search`, `method`, `statusCode`, `environmentId`, `from`, `to` ve `sortOrder` filtrelerini destekler. `pageSize` en fazla 100'dür. Liste cevabı body alanlarını içermez; body ve header ayrıntıları yalnızca detay cevabındadır.
+
+### Maskeleme ve hata formatı
+
+Authorization, cookie, set-cookie, password, token, accessToken, refreshToken, secret, apiKey, creditCard ve cvv alanları iç içe nesne/diziler dahil `[REDACTED]` olur. Maskeleme veritabanına yazmadan önce backend'de yapılır. Header sınırı 32 KiB, her JSON body sınırı 128 KiB'dir; limit aşımı `413 PAYLOAD_TOO_LARGE` döndürür.
+
+Hatalar `{ "error": { "code", "message", "details" } }` biçimindedir. Backend stack trace'i response'a gönderilmez.
+
+## Komutlar
+
+```bash
+pnpm db:validate
+pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
 pnpm typecheck
 pnpm lint
 pnpm test
-pnpm db:generate
+pnpm build
 ```
 
-Test altyapısı henüz eklenmediği için `pnpm test` kontrollü biçimde test olmadığını bildirir ve başarılı sonlanır.
+Prisma migration komutları `packages/database/prisma.config.ts` üzerinden `DIRECT_URL` kullanır; migration için Transaction Pooler (`DATABASE_URL`, 6543) kullanılmaz.
 
-## Sonraki aşama
+## GitHub Actions migration
 
-Aşama 2'de event alma modelinin ve API'sinin tasarlanması, veritabanı tablolarının eklenmesi ve demo hata senaryolarının oluşturulması önerilir. Bu aşamaya geçerken önce `HANDOFF.md` güncellenmelidir.
+Yerel ağ Session Pooler'a erişemiyorsa mevcut migration'ları manuel olarak GitHub Actions üzerinden uygulayın:
+
+1. Repository Settings > Secrets and variables > Actions bölümünde `DIRECT_URL` secret'ını tanımlayın.
+2. Actions > `Database Migration` workflow'unu açın.
+3. `Run workflow` ile manuel çalıştırın.
+
+Workflow Ubuntu runner üzerinde Node.js ve pnpm kurar, frozen lockfile ile bağımlılıkları yükler, Prisma schema/client doğrulamasını yapar ve yalnızca mevcut migration'ları `prisma migrate deploy` ile uygular. Seed, migration üretimi ve veritabanı reset işlemi yapmaz. Secret workflow komutlarında yazdırılmaz.
+
+## Aşama 3'te olmayanlar
+
+Node SDK, gelişmiş demo API hata senaryoları, frontend dashboard, replay iş akışı, BullMQ/Redis görev işleme ve gerçek kullanıcı login sistemi henüz geliştirilmemiştir.
+
+## Supabase doğrulama notu
+
+Supabase CLI bağlantı ayrımı Prisma schema validation'dan geçti. `DIRECT_URL` ile migration deploy denemesi bağlantı zaman aşımına uğradı; bu çalışma ortamında seed ve gerçek PostgreSQL event smoke testleri tamamlanamadı. Session Pooler erişilebilir olduğunda `pnpm db:migrate`, iki kez `pnpm db:seed` ve README'deki API örnekleri sırayla çalıştırılmalıdır.

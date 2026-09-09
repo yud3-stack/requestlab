@@ -6,3 +6,134 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum ProjectRole {
+  OWNER
+  ADMIN
+  DEVELOPER
+  VIEWER
+}
+
+enum EnvironmentType {
+  DEVELOPMENT
+  TEST
+  STAGING
+  PRODUCTION
+}
+
+model User {
+  id            String          @id @default(cuid())
+  name          String
+  email         String          @unique
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  memberships   ProjectMember[]
+  auditEvents   AuditEvent[]
+}
+
+model Project {
+  id            String          @id @default(cuid())
+  name          String
+  slug          String          @unique
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  memberships   ProjectMember[]
+  environments  Environment[]
+  apiKeys       ApiKey[]
+  events        RequestEvent[]
+  auditEvents   AuditEvent[]
+}
+
+model ProjectMember {
+  id            String       @id @default(cuid())
+  userId        String
+  projectId     String
+  role          ProjectRole
+  createdAt     DateTime     @default(now())
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@index([projectId])
+}
+
+model Environment {
+  id            String            @id @default(cuid())
+  projectId     String
+  name          String
+  slug          String
+  type          EnvironmentType
+  baseUrl       String?
+  replayEnabled Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  events        RequestEvent[]
+
+  @@unique([projectId, slug])
+  @@index([projectId])
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  projectId   String
+  name        String
+  keyPrefix   String
+  keyHash     String
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([keyPrefix])
+}
+
+model RequestEvent {
+  id              String       @id @default(cuid())
+  externalEventId String
+  projectId       String
+  environmentId   String
+  requestId       String?
+  method          String
+  path            String
+  route           String?
+  query           Json?
+  requestHeaders  Json?
+  requestBody     Json?
+  responseHeaders Json?
+  responseBody    Json?
+  statusCode      Int
+  durationMs      Int?
+  errorType       String?
+  errorMessage    String?
+  stackTrace      String?
+  occurredAt      DateTime
+  createdAt       DateTime     @default(now())
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment     Environment  @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, externalEventId])
+  @@index([projectId, createdAt])
+  @@index([projectId, statusCode])
+  @@index([projectId, environmentId])
+  @@index([projectId, path])
+  @@index([requestId])
+}
+
+model AuditEvent {
+  id           String   @id @default(cuid())
+  projectId    String
+  userId       String
+  action       String
+  resourceType String
+  resourceId   String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([userId, createdAt])
+}
