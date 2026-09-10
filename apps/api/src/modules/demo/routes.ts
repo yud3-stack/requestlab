@@ -19,10 +19,16 @@ export function registerDemoRoutes(app: FastifyInstance, context: AppContext): v
   app.post("/api/demo/session", async (request) => {
     sessionLimiter.check(clientKey(request, "demo-session"));
     const project = await resolveDemoProject(context);
-    const member = await context.db.projectMember.findFirst({
-      where: { projectId: project.id },
-      orderBy: { createdAt: "asc" }
-    });
+    const [member, environments] = await Promise.all([
+      context.db.projectMember.findFirst({
+        where: { projectId: project.id },
+        orderBy: { createdAt: "asc" }
+      }),
+      context.db.environment.findMany({
+        where: { projectId: project.id },
+        orderBy: { createdAt: "asc" }
+      })
+    ]);
     if (!member) throw new AppError("DEMO_UNAVAILABLE", "Public demo is not configured", 503);
     if (!context.config.demoSessionSecret)
       throw new AppError("DEMO_UNAVAILABLE", "Public demo is not configured", 503);
@@ -33,7 +39,14 @@ export function registerDemoRoutes(app: FastifyInstance, context: AppContext): v
           context.config.demoSessionSecret
         ),
         expiresInSeconds: 1800,
-        project: { slug: project.slug }
+        project: {
+          id: project.id,
+          name: project.name,
+          slug: project.slug,
+          createdAt: project.createdAt,
+          updatedAt: project.updatedAt
+        },
+        environments
       }
     };
   });

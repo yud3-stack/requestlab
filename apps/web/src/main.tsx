@@ -47,7 +47,7 @@ import {
   type RequestEventSummary
 } from "@requestlab/shared";
 import type { ApiKey, Environment, Project } from "./api";
-import { api, ApiError, ensureDemoSession, resetDemoSession } from "./api";
+import { api, ApiError, ensureDemoSession, getDemoBootstrap, resetDemoSession } from "./api";
 import "./styles.css";
 
 const publicDemoMode = import.meta.env.VITE_DEMO_MODE === "true";
@@ -70,17 +70,19 @@ export function App({ demoMode = publicDemoMode }: { demoMode?: boolean } = {}) 
     staleTime: 25 * 60_000,
     retry: false
   });
+  const demoBootstrap = demoMode ? getDemoBootstrap() : undefined;
   const projects = useQuery({
     queryKey: ["projects"],
     queryFn: ({ signal }) => api.projects(signal),
-    enabled: !demoMode || demoSession.isSuccess,
+    enabled: !demoMode || (demoSession.isSuccess && !demoBootstrap),
     retry: false
   });
   const [projectId, setProjectId] = useState(
     () => localStorage.getItem("requestlab-project") || ""
   );
+  const availableProjects = demoBootstrap ? [demoBootstrap.project] : projects.data?.data;
   const project =
-    projects.data?.data.find((item) => item.id === projectId) || projects.data?.data[0];
+    availableProjects?.find((item) => item.id === projectId) || availableProjects?.[0];
   useEffect(() => {
     if (project) {
       setProjectId(project.id);
@@ -100,7 +102,7 @@ export function App({ demoMode = publicDemoMode }: { demoMode?: boolean } = {}) 
       />
     );
   if (projects.isLoading) return <StartupLoading label="Projeler yükleniyor..." />;
-  if (projects.isError || !project)
+  if (projects.isError)
     return (
       <StartupError
         error={projects.error}
@@ -108,10 +110,11 @@ export function App({ demoMode = publicDemoMode }: { demoMode?: boolean } = {}) 
         retrying={projects.isFetching}
       />
     );
+  if (!availableProjects || !project) return <StartupLoading label="Projeler yükleniyor..." />;
   return (
     <Shell
       project={project}
-      projects={projects.data!.data}
+      projects={availableProjects}
       projectId={projectId || project.id}
       onProject={setProjectId}
       demoMode={demoMode}
@@ -134,7 +137,10 @@ function Shell({
 }) {
   const environments = useQuery({
     queryKey: ["environments", projectId],
-    queryFn: ({ signal }) => api.environments(projectId, signal)
+    queryFn: ({ signal }) => api.environments(projectId, signal),
+    enabled: !(demoMode && getDemoBootstrap()),
+    initialData:
+      demoMode && getDemoBootstrap() ? { data: getDemoBootstrap()!.environments } : undefined
   });
   const [environmentId, setEnvironmentId] = useState(
     () => localStorage.getItem("requestlab-environment") || ""

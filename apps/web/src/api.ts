@@ -50,6 +50,10 @@ export type EventPage = {
   data: RequestEventSummary[];
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
 };
+export type DemoBootstrap = {
+  project: Project;
+  environments: Environment[];
+};
 
 const baseUrl = import.meta.env.VITE_REQUESTLAB_API_URL || "http://localhost:3001";
 const devUserId = import.meta.env.VITE_REQUESTLAB_DEV_USER_ID;
@@ -63,6 +67,7 @@ const RETRYABLE_STATUS_CODES = new Set([502, 503]);
 let demoToken: string | undefined;
 let demoTokenExpiresAt = 0;
 let demoSessionPromise: Promise<string> | undefined;
+let demoBootstrap: DemoBootstrap | undefined;
 
 export function getRequestHeaders(userId = devUserId): HeadersInit | undefined {
   return !demoMode && userId ? { "x-requestlab-user-id": userId } : undefined;
@@ -82,6 +87,11 @@ export class ApiError extends Error {
 export function resetDemoSession(): void {
   demoToken = undefined;
   demoTokenExpiresAt = 0;
+  demoBootstrap = undefined;
+}
+
+export function getDemoBootstrap(): DemoBootstrap | undefined {
+  return demoBootstrap;
 }
 
 function hasValidDemoToken(): boolean {
@@ -92,17 +102,29 @@ export async function ensureDemoSession(): Promise<string> {
   if (hasValidDemoToken()) return demoToken!;
   if (!demoSessionPromise) {
     demoSessionPromise = request<{
-      data?: { token?: string; expiresInSeconds?: number };
+      data?: {
+        token?: string;
+        expiresInSeconds?: number;
+        project?: DemoBootstrap["project"];
+        environments?: DemoBootstrap["environments"];
+      };
     }>("/api/demo/session", undefined, { method: "POST" })
       .then((body) => {
-        const token = body.data?.token;
-        if (!token) throw new ApiError(503, "Public demo session is unavailable.");
+        const data = body.data;
+        if (!data?.token) throw new ApiError(503, "Public demo session is unavailable.");
+        const token = data.token;
         demoToken = token;
-        const expiresInSeconds = body.data?.expiresInSeconds;
+        const expiresInSeconds = data.expiresInSeconds;
         demoTokenExpiresAt =
           typeof expiresInSeconds === "number" && expiresInSeconds > 0
             ? Date.now() + expiresInSeconds * 1_000
             : tokenExpiry(token);
+        if (data.project && data.environments) {
+          demoBootstrap = {
+            project: data.project,
+            environments: data.environments
+          };
+        }
         return token;
       })
       .finally(() => {

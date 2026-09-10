@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { App, diffJson, durationDelta } from "../src/main";
-import { api, ApiError, ensureDemoSession } from "../src/api";
+import { api, ApiError, ensureDemoSession, getDemoBootstrap } from "../src/api";
 
 vi.mock("../src/api", async () => {
   return {
@@ -17,6 +17,7 @@ vi.mock("../src/api", async () => {
       }
     },
     ensureDemoSession: vi.fn(),
+    getDemoBootstrap: vi.fn(),
     resetDemoSession: vi.fn(),
     api: {
       projects: vi.fn(),
@@ -187,6 +188,18 @@ describe("dashboard", () => {
 
     resolveSession?.("rlk_test_session");
     await waitFor(() => expect(api.projects).toHaveBeenCalledTimes(1));
+  });
+  it("uses the public demo bootstrap without reloading project data", async () => {
+    vi.mocked(getDemoBootstrap).mockReturnValue({
+      project,
+      environments: [environment]
+    });
+    renderApp("/", true);
+
+    expect(api.projects).not.toHaveBeenCalled();
+    expect(api.environments).not.toHaveBeenCalled();
+    expect(await screen.findByText("Toplam istek")).toBeInTheDocument();
+    expect(api.stats).toHaveBeenCalledTimes(1);
   });
   it("shows a cold-start message after a few seconds", () => {
     vi.useFakeTimers();

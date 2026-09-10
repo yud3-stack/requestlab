@@ -239,6 +239,8 @@ describe("production public demo boundaries", () => {
     });
     expect(session.statusCode).toBe(200);
     expect(session.json().data.project.slug).toBe("shop");
+    expect(session.json().data.project.id).toBe("project-1");
+    expect(session.json().data.environments).toHaveLength(1);
     const token = session.json().data.token as string;
     const projects = await app.inject({
       method: "GET",

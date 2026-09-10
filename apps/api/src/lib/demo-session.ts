@@ -33,15 +33,25 @@ export function isDemoSession(request: FastifyRequest, context: AppContext): boo
   return Boolean(request.headers.authorization) && Boolean(requireDemoSession(request, context));
 }
 
-export async function resolveDemoProject(
-  context: AppContext
-): Promise<{ id: string; slug: string }> {
+export async function resolveDemoProject(context: AppContext): Promise<{
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: Date;
+  updatedAt: Date;
+}> {
   const slug = context.config.demoProjectSlug;
   if (!slug || slug === "*" || slug.includes("/"))
     throw new AppError("DEMO_UNAVAILABLE", "Public demo is not configured", 503);
   const project = await context.db.project.findUnique({ where: { slug } });
   if (!project) throw new AppError("DEMO_UNAVAILABLE", "Public demo is not configured", 503);
-  return { id: project.id, slug: project.slug };
+  return {
+    id: project.id,
+    name: project.name,
+    slug: project.slug,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt
+  };
 }
 
 function encode(value: unknown): string {
