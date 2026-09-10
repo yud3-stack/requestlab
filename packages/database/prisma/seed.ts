@@ -53,6 +53,8 @@ async function main(): Promise<void> {
     });
   }
 
+  // ReplayRun records are runtime data and are intentionally not seeded or deleted.
+
   console.log(
     `Seeded user ${user.id}, project ${project.slug}. Development API key prefix: ${keyPrefix}`
   );

@@ -116,6 +116,11 @@ export type ApiErrorResponse = {
       | "VALIDATION_ERROR"
       | "PAYLOAD_TOO_LARGE"
       | "DUPLICATE_EVENT"
+      | "REPLAY_UNAVAILABLE"
+      | "REPLAY_NOT_ALLOWED"
+      | "REPLAY_NOT_FOUND"
+      | "REPLAY_TARGET_INVALID"
+      | "REPLAY_DUPLICATE_JOB"
       | "INTERNAL_ERROR";
     message: string;
     details: unknown;
@@ -136,3 +141,46 @@ export type EventStats = {
   topEndpoints: Array<{ path: string; count: number; errorCount: number }>;
   recentErrors: RequestEventSummary[];
 };
+
+export const ReplayStatusSchema = z.enum(["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "UNCERTAIN"]);
+export type ReplayStatus = z.infer<typeof ReplayStatusSchema>;
+
+export const CreateReplayInputSchema = z.object({
+  environmentId: z.string().min(1),
+  query: z.record(z.string(), jsonValueSchema).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  body: jsonValueSchema.optional(),
+  confirmSideEffects: z.boolean().optional()
+});
+export type CreateReplayInput = z.infer<typeof CreateReplayInputSchema>;
+
+export type ReplaySummary = {
+  id: string;
+  originalEventId: string;
+  environmentId: string;
+  requestedBy: string;
+  status: ReplayStatus;
+  method: string;
+  targetUrl: string;
+  statusCode: number | null;
+  durationMs: number | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+};
+export type ReplayDetail = ReplaySummary & {
+  projectId: string;
+  requestHeaders: unknown;
+  requestQuery: unknown;
+  requestBody: unknown;
+  responseHeaders: unknown;
+  responseBody: unknown;
+};
+export type ReplayPage = { data: ReplaySummary[]; pagination: Pagination };
+export type ReplayErrorCode =
+  | "REPLAY_UNAVAILABLE"
+  | "REPLAY_NOT_ALLOWED"
+  | "REPLAY_NOT_FOUND"
+  | "REPLAY_TARGET_INVALID"
+  | "REPLAY_DUPLICATE_JOB";

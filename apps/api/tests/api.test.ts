@@ -111,6 +111,34 @@ function dbMock(overrides: Record<string, unknown> = {}): PrismaClient {
       findMany: async () => [event],
       findFirst: async () => event
     },
+    replayRun: {
+      create: async () => ({
+        id: "replay-1",
+        projectId: "project-1",
+        originalEventId: "event-1",
+        environmentId: "env-1",
+        requestedBy: "user-1",
+        status: "QUEUED",
+        method: "GET",
+        targetUrl: "http://example.com/orders",
+        requestHeaders: {},
+        requestQuery: {},
+        requestBody: null,
+        responseHeaders: null,
+        responseBody: null,
+        statusCode: null,
+        durationMs: null,
+        errorMessage: null,
+        startedAt: null,
+        finishedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }),
+      count: async () => 0,
+      findMany: async () => [],
+      findFirst: async () => null,
+      update: async () => ({})
+    },
     $transaction: async (callback: (transaction: unknown) => unknown) => callback(base)
   };
   return { ...base, ...overrides } as unknown as PrismaClient;
@@ -372,6 +400,105 @@ describe("CORS and development identity", () => {
     });
     const response = await app.inject({ method: "GET", url: "/api/projects" });
     expect(response.statusCode).toBe(200);
+    await app.close();
+  });
+});
+
+describe("replay API authorization", () => {
+  const queue = { add: async () => undefined, close: async () => undefined };
+  const replayRequest = {
+    method: "POST" as const,
+    url: "/api/projects/project-1/events/event-1/replays",
+    headers: { "x-requestlab-user-id": "user-1" },
+    payload: { environmentId: "env-1", confirmSideEffects: true }
+  };
+
+  it("allows developers and records a queued replay", async () => {
+    let auditAction = "";
+    const db = dbMock({
+      environment: {
+        findUnique: async () => ({ ...environment, baseUrl: "https://example.com", type: "TEST" })
+      },
+      auditEvent: {
+        create: async ({ data }: { data: { action: string } }) => {
+          auditAction = data.action;
+        }
+      }
+    });
+    const app = createApp({ db, replayQueue: queue, config: { nodeEnv: "test", apiPort: 3001 } });
+    const response = await app.inject(replayRequest);
+    expect(response.statusCode).toBe(202);
+    expect(response.json().data.status).toBe("QUEUED");
+    expect(auditAction).toBe("REPLAY_CREATED");
+    await app.close();
+  });
+
+  it("rejects viewers, production, disabled environments and unconfirmed side effects", async () => {
+    const viewer = createApp({
+      db: dbMock({
+        projectMember: {
+          findUnique: async () => ({ userId: "user-1", projectId: "project-1", role: "VIEWER" })
+        }
+      }),
+      replayQueue: queue,
+      config: { nodeEnv: "test", apiPort: 3001 }
+    });
+    expect((await viewer.inject(replayRequest)).statusCode).toBe(403);
+    await viewer.close();
+
+    for (const environmentOverride of [
+      { ...environment, baseUrl: "https://example.com", type: "PRODUCTION", replayEnabled: true },
+      { ...environment, baseUrl: "https://example.com", type: "TEST", replayEnabled: false }
+    ]) {
+      const app = createApp({
+        db: dbMock({ environment: { findUnique: async () => environmentOverride } }),
+        replayQueue: queue,
+        config: { nodeEnv: "test", apiPort: 3001 }
+      });
+      expect((await app.inject(replayRequest)).statusCode).toBe(400);
+      await app.close();
+    }
+
+    const app = createApp({
+      db: dbMock({
+        environment: {
+          findUnique: async () => ({ ...environment, baseUrl: "https://example.com" })
+        },
+        requestEvent: { findFirst: async () => ({ ...event, method: "POST" }) }
+      }),
+      replayQueue: queue,
+      config: { nodeEnv: "test", apiPort: 3001 }
+    });
+    expect(
+      (await app.inject({ ...replayRequest, payload: { environmentId: "env-1" } })).statusCode
+    ).toBe(400);
+    await app.close();
+  });
+
+  it("returns unavailable and marks the run failed when queueing fails", async () => {
+    let updated = false;
+    const app = createApp({
+      db: dbMock({
+        environment: {
+          findUnique: async () => ({ ...environment, baseUrl: "https://example.com" })
+        },
+        replayRun: {
+          ...dbMock().replayRun,
+          update: async () => {
+            updated = true;
+          }
+        }
+      }),
+      replayQueue: {
+        add: async () => {
+          throw new Error("redis down");
+        },
+        close: async () => undefined
+      },
+      config: { nodeEnv: "test", apiPort: 3001 }
+    });
+    expect((await app.inject(replayRequest)).statusCode).toBe(503);
+    expect(updated).toBe(true);
     await app.close();
   });
 });

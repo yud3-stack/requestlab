@@ -166,11 +166,30 @@ Workflow Ubuntu runner üzerinde Node.js ve pnpm kurar, frozen lockfile ile bağ
 
 ## Sonraki aşamalar
 
-Replay iş akışı, BullMQ/Redis görev işleme, gerçek kullanıcı login sistemi ve production deployment sonraki aşamalardır. Replay düğmesi bu aşamada ağ isteği göndermez.
+Replay JSON karşılaştırma ekranı, gerçek kullanıcı login sistemi ve production deployment sonraki aşamalardır. Replay frontend arayüzü bu aşamada değiştirilmemiştir.
 
 ## Dashboard
 
 Dashboard gerçek API'den proje, environment, event liste/detay, API key metadata ve `/api/projects/:projectId/events/stats` verilerini okur. Genel Bakış istatistikleri sayfa örnekleminden değil PostgreSQL agregasyonundan üretilir. İstekler ekranı URL filtreleri, debounce arama, pagination, otomatik yenileme ve mobil event görünümünü destekler. Geçici development user header davranışı production auth yerine geçmez.
+
+## Replay backend (Aşama 5A)
+
+Replay backend'i yalnızca başarısız event'leri seçilen development/test/staging environment'ına kuyruğa alır. `POST /api/projects/<PROJECT_ID>/events/<EVENT_ID>/replays` gövdesi `environmentId` ve isteğe bağlı `query`, `headers`, `body`, `confirmSideEffects` içerir; target URL, method ve path kullanıcıdan alınmaz. Sonuçlar `GET /api/projects/<PROJECT_ID>/replays` ve `GET /api/projects/<PROJECT_ID>/replays/<REPLAY_ID>` ile okunur. Replay oluşturma OWNER, ADMIN ve DEVELOPER rollerine açıktır; VIEWER yalnızca sonuçları okuyabilir.
+
+Redis için `REDIS_URL` gerekir; `redis://` ve Upstash `rediss://` desteklenir. API ve worker ayrı BullMQ/Redis bağlantıları kullanır. Redis yoksa API normal endpoint'lerle başlar, replay oluşturma `503 REPLAY_UNAVAILABLE` döndürür. Worker Redis olmadan güvenli bir hata mesajıyla başlamaz. `REPLAY_TIMEOUT_MS` varsayılan 10000, `REPLAY_MAX_RESPONSE_BYTES` varsayılan 131072'dir.
+
+Replay worker yalnızca http/https hedeflerini, credentials içermeyen URL'leri kabul eder; production/replay kapalı environment'lar, loopback/private/link-local/multicast/metadata adresleri ve DNS sonuçlarındaki güvenli olmayan IP'ler engellenir. Redirect takip edilmez, response boyutu sınırlıdır ve response verileri tekrar maskelenir. `ALLOW_PRIVATE_REPLAY_TARGETS=true` yalnızca development'ta yerel demo hedefleri için kullanılabilir; production'da yok sayılır. Authorization, cookie, host, forwarding ve bağlantı header'ları gönderilmez. Yan etkili method'larda `confirmSideEffects=true` ve yeni idempotency key zorunludur.
+
+Örnek:
+
+```bash
+curl -X POST http://localhost:3001/api/projects/<PROJECT_ID>/events/<EVENT_ID>/replays \
+  -H "content-type: application/json" \
+  -H "x-requestlab-user-id: <USER_ID>" \
+  -d '{"environmentId":"<TEST_ENVIRONMENT_ID>","confirmSideEffects":true}'
+```
+
+Replay migration'ı `20260909130000_replay_runs` adındadır. Yerel pooler erişimi yoksa mevcut GitHub Actions `Database Migration` workflow'u ile `DIRECT_URL` secret'ı üzerinden uygulanmalıdır. Seed scripti ReplayRun kayıtlarına dokunmaz; seed tekrar çalıştırıldığında replay geçmişi silinmez. JSON karşılaştırma ve replay frontend ekranı Aşama 5B kapsamındadır.
 
 ## Supabase doğrulama notu
 

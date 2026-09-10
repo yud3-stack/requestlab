@@ -8,6 +8,11 @@ export type ErrorCode =
   | "VALIDATION_ERROR"
   | "PAYLOAD_TOO_LARGE"
   | "DUPLICATE_EVENT"
+  | "REPLAY_UNAVAILABLE"
+  | "REPLAY_NOT_ALLOWED"
+  | "REPLAY_NOT_FOUND"
+  | "REPLAY_TARGET_INVALID"
+  | "REPLAY_DUPLICATE_JOB"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {

@@ -36,6 +36,15 @@ RequestLab, gerçek uygulamalardaki API hatalarını kaydetmek, incelemek ve tes
 - CORS preflight ile GET/POST/DELETE/OPTIONS metotları ve `Content-Type`, `X-RequestLab-User-Id`, `X-RequestLab-Key` header'ları desteklenir; izinli origin'lerde 401/403 yanıtları da CORS header'ı taşır.
 - Vite `envDir` açıkça `apps/web` dizinine ayarlandı. `apps/web/.env.local` içindeki `VITE_REQUESTLAB_DEV_USER_ID`, seed kullanıcısının ID'si olmalı; frontend yalnızca bu geçici kullanıcı header'ını gönderir, secret/API key içermez.
 
+## Aşama 5A'da tamamlananlar
+
+- `ReplayRun` modeli, `ReplayStatus` enum'u ve `20260909130000_replay_runs` migration'ı eklendi; seed runtime replay geçmişini silmez.
+- Replay oluşturma, listeleme ve detay endpoint'leri eklendi. Project membership ve OWNER/ADMIN/DEVELOPER oluşturma, VIEWER okuma yetkileri uygulanır.
+- Failed event, aynı project environment, production/replayEnabled kontrolleri, yan etkili method confirmation ve audit kaydı uygulanır.
+- BullMQ API queue adapter'ı ve ayrı Redis bağlantılı worker eklendi. Redis yoksa API replay endpoint'i `REPLAY_UNAVAILABLE`, worker ise secret içermeyen startup hatası verir.
+- Worker DNS/IP hedef doğrulaması, redirect kapatma, timeout, response byte limiti, güvenli header allow-listesi, idempotency key ve response masking uygular.
+- Replay frontend ekranı ve JSON karşılaştırma bu aşamada özellikle değiştirilmedi; Aşama 5B başlangıç noktasıdır.
+
 ## Veritabanı modelleri
 
 `User`, `Project`, `ProjectMember`, `Environment`, `ApiKey`, `RequestEvent` ve `AuditEvent` modelleri `packages/database/prisma/schema.prisma` içindedir. Project/external event, project/environment ve sorgu filtreleri için gerekli unique constraint ve indeksler migration SQL'de bulunur.
@@ -102,6 +111,11 @@ Seed sonrası demo kullanıcının ID'si çıktıdan alınarak `DEV_USER_ID` vey
 - `apps/web/src/styles.css`: responsive dashboard görsel sistemi
 - `apps/web/tests/dashboard.test.tsx`: frontend loading, error, empty, drawer, masking ve mobil menü testleri
 - `apps/web/tests/api-client.test.ts`: development user header testleri
+- `apps/api/src/modules/replays/routes.ts`: replay API ve yetki/güvenlik kontrolleri
+- `apps/api/src/lib/replay-queue.ts`: API BullMQ queue adapter'ı
+- `apps/api/src/lib/replay-target.ts`: API target URL doğrulaması
+- `apps/worker/src/replay.ts`: DNS doğrulamalı replay execution ve sonuç kaydı
+- `apps/worker/tests/replay.test.ts`: worker timeout, response limit, redirect ve masking testleri
 
 Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL` alır. Yerel çalışmada config ve seed kök `.env` dosyasını opsiyonel yükler; `.env` yoksa process environment kullanılabilir. API server ve runtime Prisma Client ise `DATABASE_URL` kullanır; böylece Supabase Transaction Pooler (6543) uygulama runtime'ında, Session Pooler (5432) Prisma migration işlemlerinde ayrıştırılır.
 
@@ -135,6 +149,7 @@ Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL`
 - `corepack pnpm exec prettier --check .`: başarılı.
 - `git diff --check`: başarılı.
 - CORS regression testleri: izinli preflight, doğru origin, user header allow-list, CORS'lu 401 ve izin­siz origin doğrulandı.
+- Aşama 5A replay testleri: 39 test başarılı; rol/proje/environment/production/confirmation, queue failure, target IP, redirect, header filtering, timeout, response limit, masking ve state transition doğrulandı.
 
 Docker CLI bu ortamda bulunmadı; gerekli migration GitHub Actions üzerinden çalıştırıldı. Migration geçmişi değiştirilmedi, yeni migration üretilmedi ve 6543 Transaction Pooler üzerinden migration çalıştırılmadı. Gerçek Supabase veritabanı round-trip doğrulaması tamamlandı. Event ID, API key ve bağlantı değerleri loglanmadı veya dokümana yazılmadı.
 
@@ -146,11 +161,12 @@ GitHub Actions migration workflow'u manuel `workflow_dispatch` ile başarıyla k
 - CORS için production origin listesi deployment ortamında `CORS_ALLOWED_ORIGINS` ile açıkça sağlanmalıdır.
 - Gerçek PostgreSQL integration test suite'i yoktur; route testleri `app.inject` ve mock DB ile çalışır.
 - API key hash'i genel amaçlı SHA-256'dır; düşük hacimli ingestion anahtarı doğrulaması için kullanılmıştır.
-- Redis, replay, dashboard ve gerçek kullanıcı login sistemi bu aşamada kullanılmaz.
+- Redis ve replay backend'i Aşama 5A'da eklendi; gerçek Upstash replay smoke testi bu ortamda `REDIS_URL`/migration erişimi olmadığı için çalıştırılamadı.
+- Replay frontend ve JSON karşılaştırma ekranı Aşama 5B kapsamındadır.
 
-## Aşama 5 için başlangıç noktası
+## Aşama 5B için başlangıç noktası
 
-Replay worker, Redis/BullMQ işleme, gerçek kullanıcı login'i ve production deployment ele alınabilir. Frontend dashboard ve mevcut gerçek veri sözleşmeleri korunmalıdır.
+Replay API, `ReplayRun` durumları ve worker sözleşmesi korunarak frontend replay ekranı, JSON karşılaştırma görünümü ve sonuç polling'i ele alınabilir. Gerçek kullanıcı login'i ve production deployment bu aşamanın dışındadır.
 
 ## Aşama 4 için başlangıç noktası
 

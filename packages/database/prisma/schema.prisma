@@ -21,6 +21,14 @@ enum EnvironmentType {
   PRODUCTION
 }
 
+enum ReplayStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  UNCERTAIN
+}
+
 model User {
   id            String          @id @default(cuid())
   name          String
@@ -29,6 +37,7 @@ model User {
   updatedAt     DateTime        @updatedAt
   memberships   ProjectMember[]
   auditEvents   AuditEvent[]
+  replayRuns    ReplayRun[]
 }
 
 model Project {
@@ -42,6 +51,7 @@ model Project {
   apiKeys       ApiKey[]
   events        RequestEvent[]
   auditEvents   AuditEvent[]
+  replayRuns    ReplayRun[]
 }
 
 model ProjectMember {
@@ -69,6 +79,7 @@ model Environment {
   updatedAt     DateTime          @updatedAt
   project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   events        RequestEvent[]
+  replayRuns    ReplayRun[]
 
   @@unique([projectId, slug])
   @@index([projectId])
@@ -113,6 +124,7 @@ model RequestEvent {
   createdAt       DateTime     @default(now())
   project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   environment     Environment  @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  replayRuns      ReplayRun[]
 
   @@unique([projectId, externalEventId])
   @@index([projectId, createdAt])
@@ -136,4 +148,35 @@ model AuditEvent {
 
   @@index([projectId, createdAt])
   @@index([userId, createdAt])
+}
+
+model ReplayRun {
+  id              String       @id @default(cuid())
+  projectId       String
+  originalEventId String
+  environmentId   String
+  requestedBy     String
+  status          ReplayStatus @default(QUEUED)
+  method          String
+  targetUrl       String
+  requestHeaders  Json?
+  requestQuery    Json?
+  requestBody     Json?
+  responseHeaders Json?
+  responseBody    Json?
+  statusCode      Int?
+  durationMs      Int?
+  errorMessage    String?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  originalEvent   RequestEvent @relation(fields: [originalEventId], references: [id], onDelete: Cascade)
+  environment     Environment  @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [requestedBy], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status, createdAt])
+  @@index([projectId, environmentId, createdAt])
+  @@index([originalEventId])
 }
