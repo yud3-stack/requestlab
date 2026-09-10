@@ -35,7 +35,8 @@ export function registerApiKeyRoutes(app: FastifyInstance, context: AppContext):
       const apiKey = await context.db.$transaction(async (transaction) => {
         const created = await transaction.apiKey.create({
           data: {
-            ...generated,
+            keyPrefix: generated.keyPrefix,
+            keyHash: generated.keyHash,
             projectId,
             name: input.data.name,
             expiresAt: input.data.expiresAt ?? null

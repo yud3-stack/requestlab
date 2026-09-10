@@ -3,7 +3,7 @@ services:
     name: requestlab-api
     runtime: node
     plan: free
-    buildCommand: corepack pnpm install --frozen-lockfile && corepack pnpm --filter @requestlab/api... build
+    buildCommand: corepack pnpm install --frozen-lockfile && corepack pnpm --filter @requestlab/database db:generate && corepack pnpm --filter @requestlab/api... build
     startCommand: corepack pnpm --filter @requestlab/api start
     healthCheckPath: /health
     envVars:
@@ -12,6 +12,8 @@ services:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
         sync: false
       - key: REDIS_URL
         sync: false
