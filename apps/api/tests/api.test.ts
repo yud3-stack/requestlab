@@ -1,9 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { maskSensitiveData } from "../src/lib/masking.js";
 import { hashApiKey } from "../src/lib/security.js";
 import { createDemoToken } from "../src/lib/demo-session.js";
+
+afterEach(() => vi.unstubAllGlobals());
 
 const user = {
   id: "user-1",
@@ -295,6 +297,37 @@ describe("production public demo boundaries", () => {
       headers: { authorization: "Bearer invalid" }
     });
     expect(unknown.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("preserves expected demo scenario failure statuses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        expect(init.method).toBe("POST");
+        return new Response(JSON.stringify({ data: { statusCode: 500 } }), { status: 500 });
+      })
+    );
+    const app = createApp({
+      db: dbMock(),
+      config: {
+        ...config,
+        demoApiBaseUrl: "https://demo.example.test",
+        demoTriggerSecret: "trigger"
+      }
+    });
+    const token = createDemoToken(
+      { sub: "user-1", projectId: "project-1", exp: Date.now() + 60_000 },
+      config.demoSessionSecret
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/demo/scenarios/order-error",
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.statusCode).toBe(500);
     await app.close();
   });
 

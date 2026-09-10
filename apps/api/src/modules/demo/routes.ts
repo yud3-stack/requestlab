@@ -46,6 +46,12 @@ export function registerDemoRoutes(app: FastifyInstance, context: AppContext): v
     const baseUrl = context.config.demoApiBaseUrl;
     if (!baseUrl) throw new AppError("DEMO_UNAVAILABLE", "Demo API is not configured", 503);
     const url = new URL(`/internal/demo/scenarios/${request.params.scenario}`, baseUrl);
+    const expectedStatus =
+      request.params.scenario === "order-error"
+        ? 500
+        : request.params.scenario === "login-error"
+          ? 401
+          : 200;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8_000);
     try {
@@ -57,7 +63,8 @@ export function registerDemoRoutes(app: FastifyInstance, context: AppContext): v
           : {},
         signal: controller.signal
       });
-      if (!response.ok) throw new AppError("DEMO_UNAVAILABLE", "Demo scenario failed", 502);
+      if (response.status !== expectedStatus)
+        throw new AppError("DEMO_UNAVAILABLE", "Demo scenario failed", 502);
       return { data: { scenario: request.params.scenario, statusCode: response.status } };
     } catch (error) {
       if (error instanceof AppError) throw error;
