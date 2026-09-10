@@ -114,6 +114,7 @@ export function App({ demoMode = publicDemoMode }: { demoMode?: boolean } = {}) 
       projects={projects.data!.data}
       projectId={projectId || project.id}
       onProject={setProjectId}
+      demoMode={demoMode}
     />
   );
 }
@@ -122,12 +123,14 @@ function Shell({
   project,
   projects,
   projectId,
-  onProject
+  onProject,
+  demoMode
 }: {
   project: Project;
   projects: Project[];
   projectId: string;
   onProject: (id: string) => void;
+  demoMode: boolean;
 }) {
   const environments = useQuery({
     queryKey: ["environments", projectId],
@@ -263,7 +266,11 @@ function Shell({
           <Route
             path="/settings"
             element={
-              <SettingsPage project={project} environments={environments.data?.data || []} />
+              <SettingsPage
+                project={project}
+                environments={environments.data?.data || []}
+                demoMode={demoMode}
+              />
             }
           />
         </Routes>
@@ -289,7 +296,7 @@ function Overview({ projectId, environmentId }: { projectId: string; environment
   const stats = useQuery({
     queryKey: ["stats", projectId, environmentId],
     queryFn: ({ signal }) => api.stats(projectId, { environmentId }, signal),
-    enabled: Boolean(environmentId),
+    enabled: Boolean(projectId && environmentId),
     refetchInterval: 30_000
   });
   return (
@@ -299,7 +306,11 @@ function Overview({ projectId, environmentId }: { projectId: string; environment
       {stats.isLoading || !environmentId ? (
         <SkeletonGrid />
       ) : stats.isError ? (
-        <ErrorState error={stats.error} />
+        <ErrorState
+          error={stats.error}
+          onRetry={() => void stats.refetch()}
+          retrying={stats.isFetching}
+        />
       ) : (
         <OverviewContent stats={stats.data!.data} />
       )}
@@ -486,6 +497,7 @@ function Requests({ projectId, environments }: { projectId: string; environments
   const events = useQuery({
     queryKey: ["events", projectId, query],
     queryFn: ({ signal }) => api.events(projectId, query, signal),
+    enabled: Boolean(projectId),
     refetchInterval: autoRefresh ? 30_000 : false
   });
   const detail = useQuery({
@@ -561,7 +573,11 @@ function Requests({ projectId, environments }: { projectId: string; environments
       {events.isLoading ? (
         <SkeletonTable />
       ) : events.isError ? (
-        <ErrorState error={events.error} />
+        <ErrorState
+          error={events.error}
+          onRetry={() => void events.refetch()}
+          retrying={events.isFetching}
+        />
       ) : events.data!.data.length ? (
         <>
           <EventTable
@@ -1549,14 +1565,17 @@ function highlight(text: string) {
 }
 function SettingsPage({
   project,
-  environments
+  environments,
+  demoMode
 }: {
   project: Project;
   environments: Environment[];
+  demoMode: boolean;
 }) {
   const keys = useQuery({
     queryKey: ["keys", project.id],
-    queryFn: ({ signal }) => api.keys(project.id, signal)
+    queryFn: ({ signal }) => api.keys(project.id, signal),
+    enabled: !demoMode
   });
   return (
     <Page title="Ayarlar" subtitle="Proje ve ortam yapılandırması">
@@ -1591,7 +1610,9 @@ function SettingsPage({
         <div className="panel keys-panel">
           <span className="eyebrow">API KEYS</span>
           <h2>API anahtarları</h2>
-          {keys.isLoading ? (
+          {demoMode ? (
+            <p className="field-help">API anahtarı yönetimi public demo modunda devre dışıdır.</p>
+          ) : keys.isLoading ? (
             <Spinner />
           ) : keys.isError ? (
             <ErrorState error={keys.error} />
@@ -1697,12 +1718,26 @@ function EmptyState({ title, description }: { title: string; description?: strin
     </div>
   );
 }
-function ErrorState({ error }: { error: unknown }) {
+function ErrorState({
+  error,
+  onRetry,
+  retrying = false
+}: {
+  error: unknown;
+  onRetry?: () => void;
+  retrying?: boolean;
+}) {
   return (
     <div className="error-state">
       <AlertTriangle size={20} />
       <strong>Veriler alınamadı</strong>
       <span>{errorMessage(error)}</span>
+      {onRetry && (
+        <button className="ghost-button" onClick={onRetry} disabled={retrying}>
+          <RefreshCw size={15} className={retrying ? "spin" : undefined} />
+          {retrying ? "Tekrar deneniyor..." : "Tekrar Dene"}
+        </button>
+      )}
     </div>
   );
 }

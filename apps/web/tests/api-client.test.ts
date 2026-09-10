@@ -25,6 +25,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.resetModules();
   vi.restoreAllMocks();
   resetDemoSession();
 });
@@ -158,6 +160,34 @@ describe("request retry policy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("retries a client timeout once but never retries an HTTP 4xx", async () => {
+    vi.useFakeTimers();
+    let attempt = 0;
+    const fetchMock = vi.fn((_url: string, init: RequestInit) => {
+      attempt += 1;
+      if (attempt === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject(new DOMException("timed out", "AbortError"))
+          );
+        });
+      }
+      return Promise.resolve(
+        jsonResponse(attempt === 2 ? 200 : 408, { data: projectResponse.data })
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = api.projects();
+    await vi.advanceTimersByTimeAsync(8_000);
+    await vi.advanceTimersByTimeAsync(250);
+    await expect(request).resolves.toEqual(projectResponse);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await expect(api.projects()).rejects.toMatchObject({ status: 408 });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("stops a request when its caller aborts", async () => {
     const fetchMock = vi.fn(
       (_url: string, init: RequestInit) =>
@@ -174,5 +204,43 @@ describe("request retry policy", () => {
 
     await expect(promise).rejects.toMatchObject({ status: 0 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the 45-second timeout only for production public-demo GETs", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("VITE_DEMO_MODE", "true");
+    vi.stubEnv("PROD", true);
+    vi.resetModules();
+    const { api: demoApi } = await import("../src/api");
+    let projectAttempts = 0;
+    const fetchMock = vi.fn((url: string, init: RequestInit) => {
+      if (url.endsWith("/api/demo/session"))
+        return Promise.resolve(
+          jsonResponse(200, { data: { token: "rlk_public", expiresInSeconds: 1800 } })
+        );
+      projectAttempts += 1;
+      if (projectAttempts === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject(new DOMException("timed out", "AbortError"))
+          );
+        });
+      }
+      return Promise.resolve(jsonResponse(200, projectResponse));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = demoApi.projects();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(projectAttempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(projectAttempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(36_999);
+    expect(projectAttempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(250);
+
+    await expect(request).resolves.toEqual(projectResponse);
+    expect(projectAttempts).toBe(2);
   });
 });

@@ -71,7 +71,8 @@ export function getRequestHeaders(userId = devUserId): HeadersInit | undefined {
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    message: string
+    message: string,
+    public readonly retryable = false
   ) {
     super(message);
     this.name = "ApiError";
@@ -122,12 +123,7 @@ function tokenExpiry(token: string): number {
   }
 }
 
-async function request<T>(
-  path: string,
-  signal?: AbortSignal,
-  init: RequestInit = {},
-  retryDemo = true
-): Promise<T> {
+async function request<T>(path: string, signal?: AbortSignal, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const isSessionRequest = path === "/api/demo/session";
   const maxRetries = isSessionRequest || method === "GET" ? MAX_RETRIES : 0;
@@ -137,10 +133,7 @@ async function request<T>(
     try {
       return await requestOnce<T>(path, signal, init, demoBearer);
     } catch (error) {
-      if (demoMode && retryDemo && error instanceof ApiError && error.status === 401) {
-        resetDemoSession();
-        return request<T>(path, signal, init, false);
-      }
+      if (demoMode && error instanceof ApiError && error.status === 401) resetDemoSession();
       if (attempt < maxRetries && shouldRetry(error, method) && !signal?.aborted) {
         attempt += 1;
         await delay(RETRY_BACKOFF_MS);
@@ -158,9 +151,9 @@ async function requestOnce<T>(
   demoBearer: string | undefined
 ): Promise<T> {
   const controller = new AbortController();
-  const isSessionRequest = path === "/api/demo/session";
+  const method = (init.method ?? "GET").toUpperCase();
   const timeoutMs =
-    isSessionRequest || (demoMode && path === "/api/projects")
+    demoMode && import.meta.env.PROD && method === "GET"
       ? PUBLIC_DEMO_TIMEOUT_MS
       : DEFAULT_TIMEOUT_MS;
   let timedOut = false;
@@ -205,7 +198,7 @@ async function requestOnce<T>(
     if (error instanceof ApiError) throw error;
     if (error instanceof DOMException && error.name === "AbortError") {
       if (signal?.aborted && !timedOut) throw new ApiError(0, "İstek iptal edildi.");
-      throw new ApiError(408, "İstek zaman aşımına uğradı.");
+      throw new ApiError(408, "İstek zaman aşımına uğradı.", true);
     }
     throw new ApiError(0, "RequestLab API'ye bağlanılamadı.");
   } finally {
@@ -217,7 +210,11 @@ async function requestOnce<T>(
 function shouldRetry(error: unknown, method: string): boolean {
   if (method !== "GET" && method !== "POST") return false;
   if (!(error instanceof ApiError)) return false;
-  return error.status === 0 || error.status === 408 || RETRYABLE_STATUS_CODES.has(error.status);
+  return (
+    error.status === 0 ||
+    RETRYABLE_STATUS_CODES.has(error.status) ||
+    (error.status === 408 && error.retryable)
+  );
 }
 
 async function delay(ms: number): Promise<void> {

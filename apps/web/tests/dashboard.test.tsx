@@ -104,6 +104,7 @@ function renderApp(initial = "/", demoMode = false) {
   );
 }
 function setup() {
+  vi.mocked(ensureDemoSession).mockResolvedValue("rlk_test_session");
   vi.mocked(api.projects).mockResolvedValue({ data: [project] });
   vi.mocked(api.environments).mockResolvedValue({
     data: [environment, production, disabledEnvironment]
@@ -181,6 +182,8 @@ describe("dashboard", () => {
     );
     renderApp("/", true);
     expect(api.projects).not.toHaveBeenCalled();
+    expect(api.stats).not.toHaveBeenCalled();
+    expect(api.events).not.toHaveBeenCalled();
 
     resolveSession?.("rlk_test_session");
     await waitFor(() => expect(api.projects).toHaveBeenCalledTimes(1));
@@ -210,6 +213,19 @@ describe("dashboard", () => {
     renderApp();
     expect(await screen.findByText("Toplam istek")).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
+    expect(api.stats).toHaveBeenCalledTimes(1);
+    expect(api.events).not.toHaveBeenCalled();
+  });
+  it("retries only the failed overview stats query", async () => {
+    vi.mocked(api.stats)
+      .mockRejectedValueOnce(new ApiError(408, "İstek zaman aşımına uğradı."))
+      .mockResolvedValueOnce({ data: stats });
+    renderApp();
+
+    expect(await screen.findByText("İstek zaman aşımına uğradı.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Tekrar Dene" }));
+    await waitFor(() => expect(api.stats).toHaveBeenCalledTimes(2));
+    expect(api.events).not.toHaveBeenCalled();
   });
   it("shows an understandable API error", async () => {
     vi.mocked(api.projects).mockRejectedValue(new Error("offline"));
@@ -238,6 +254,14 @@ describe("dashboard", () => {
     renderApp("/settings");
     expect(await screen.findByText("rlk_safe••••")).toBeInTheDocument();
     expect(screen.queryByText(/plaintext|secret/i)).not.toBeInTheDocument();
+  });
+  it("does not request API keys in public demo settings", async () => {
+    renderApp("/settings", true);
+
+    expect(
+      await screen.findByText("API anahtarı yönetimi public demo modunda devre dışıdır.")
+    ).toBeInTheDocument();
+    expect(api.keys).not.toHaveBeenCalled();
   });
   it("opens and closes the mobile menu", async () => {
     renderApp();
