@@ -9,6 +9,8 @@ export function registerApiKeyRoutes(app: FastifyInstance, context: AppContext):
   app.get<{ Params: { projectId: string } }>(
     "/api/projects/:projectId/api-keys",
     async (request) => {
+      if (context.config.nodeEnv === "production" && request.headers.authorization)
+        throw new AppError("FORBIDDEN", "Demo sessions cannot access API keys", 403);
       const { projectId } = request.params;
       await requireProjectMember(request, context, projectId);
       const keys = await context.db.apiKey.findMany({
@@ -22,6 +24,8 @@ export function registerApiKeyRoutes(app: FastifyInstance, context: AppContext):
   app.post<{ Params: { projectId: string } }>(
     "/api/projects/:projectId/api-keys",
     async (request, reply) => {
+      if (context.config.nodeEnv === "production" && request.headers.authorization)
+        throw new AppError("FORBIDDEN", "Demo sessions cannot change API keys", 403);
       const { projectId } = request.params;
       const { user, membership } = await requireProjectMember(request, context, projectId);
       assertAdminRole(membership.role);
@@ -56,6 +60,8 @@ export function registerApiKeyRoutes(app: FastifyInstance, context: AppContext):
   app.delete<{ Params: { projectId: string; apiKeyId: string } }>(
     "/api/projects/:projectId/api-keys/:apiKeyId",
     async (request) => {
+      if (context.config.nodeEnv === "production" && request.headers.authorization)
+        throw new AppError("FORBIDDEN", "Demo sessions cannot change API keys", 403);
       const { projectId, apiKeyId } = request.params;
       const { user, membership } = await requireProjectMember(request, context, projectId);
       assertAdminRole(membership.role);

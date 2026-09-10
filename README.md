@@ -6,6 +6,10 @@ RequestLab, gerçek uygulamalarda oluşan API hatalarını kaydetmek, incelemek 
 
 PostgreSQL veri modeli, Event API, Node SDK, replay backend'i ve gerçek Supabase verileriyle çalışan frontend dashboard tamamlandı. Replay frontend'i güvenli form, polling, liste/detay ve JSON karşılaştırma akışlarını içerir. Gerçek kullanıcı login'i ve production deployment kapsam dışıdır.
 
+## Live Demo
+
+Aşama 6B'de eklenecek. Bu aşamada gerçek deployment, DNS veya public URL doğrulaması yapılmadı.
+
 ## Teknolojiler ve klasörler
 
 - `apps/api`: Fastify API, auth, maskeleme ve modüler route'lar
@@ -196,6 +200,8 @@ Replay migration'ı `20260909130000_replay_runs` adındadır. Yerel pooler eriş
 Başarısız event detayından güvenli replay formu açılır. Form yalnızca aynı projedeki production olmayan ve `replayEnabled` açık environment'ları gösterir; POST/PUT/PATCH/DELETE için yan etki onayı ister. Authorization, cookie, host, forwarding header'ları ve `[REDACTED]` alanları gönderilmez.
 
 `/replays` replay geçmişini durum ve environment filtreleriyle listeler. `/replays/:replayId` QUEUED/RUNNING durumlarını polling ile izler, terminal durumda veya 30 saniye sonra durur ve sonuç oluştuğunda orijinal event ile JSON body/duration karşılaştırması gösterir.
+
+Production deployment hazırlığı, public demo auth/scenario sınırları, Vercel/Render blueprint'leri ve cleanup süreci için `docs/deployment.md` dosyasına bakın. Render free servisleri uykuya geçebilir ve ilk istekte cold start yaşanabilir.
 
 ## Supabase doğrulama notu
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { maskSensitiveData } from "../src/lib/masking.js";
 import { hashApiKey } from "../src/lib/security.js";
+import { createDemoToken } from "../src/lib/demo-session.js";
 
 const user = {
   id: "user-1",
@@ -73,7 +74,13 @@ function dbMock(overrides: Record<string, unknown> = {}): PrismaClient {
         role: "OWNER",
         createdAt: new Date()
       }),
-      create: async () => ({})
+      create: async () => ({}),
+      findFirst: async () => ({
+        userId: "user-1",
+        projectId: "project-1",
+        role: "OWNER",
+        createdAt: new Date()
+      })
     },
     environment: {
       findUnique: async () => environment,
@@ -197,6 +204,106 @@ describe("sensitive data masking", () => {
     expect(response.statusCode).toBe(201);
     expect(saved?.requestHeaders).toEqual({ Authorization: "[REDACTED]" });
     expect(saved?.requestBody).toEqual({ values: [{ password: "[REDACTED]" }] });
+    await app.close();
+  });
+});
+
+describe("production public demo boundaries", () => {
+  const config = {
+    nodeEnv: "production",
+    apiPort: 3001,
+    demoSessionSecret: "test-only-demo-secret",
+    demoProjectSlug: "shop",
+    rateLimits: { demoSession: 10, demoScenario: 20, replayCreate: 10, authenticated: 120 }
+  };
+
+  it("ignores the development user header in production", async () => {
+    const app = createApp({ db: dbMock(), config });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+      headers: { "x-requestlab-user-id": "user-1" }
+    });
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("creates a scoped expiring demo session without accepting identity input", async () => {
+    const app = createApp({ db: dbMock(), config });
+    const session = await app.inject({
+      method: "POST",
+      url: "/api/demo/session",
+      payload: { projectId: "other", role: "OWNER" }
+    });
+    expect(session.statusCode).toBe(200);
+    expect(session.json().data.project.slug).toBe("shop");
+    const token = session.json().data.token as string;
+    const projects = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+      headers: { authorization: `Bearer ${token}` }
+    });
+    expect(projects.statusCode).toBe(200);
+    const forbidden = await app.inject({
+      method: "GET",
+      url: "/api/projects/other",
+      headers: { authorization: `Bearer ${token}` }
+    });
+    expect(forbidden.statusCode).toBe(403);
+    const keys = await app.inject({
+      method: "GET",
+      url: "/api/projects/project-1/api-keys",
+      headers: { authorization: `Bearer ${token}` }
+    });
+    expect(keys.statusCode).toBe(403);
+    await app.close();
+  });
+
+  it("rejects expired and malformed demo tokens and unknown scenarios", async () => {
+    const app = createApp({
+      db: dbMock(),
+      config: { ...config, demoApiBaseUrl: "https://demo.example.test" }
+    });
+    const expired = createDemoToken(
+      { sub: "user-1", projectId: "project-1", exp: Date.now() - 1 },
+      config.demoSessionSecret
+    );
+    const expiredResponse = await app.inject({
+      method: "POST",
+      url: "/api/demo/scenarios/order-error",
+      headers: { authorization: `Bearer ${expired}` }
+    });
+    expect(expiredResponse.statusCode).toBe(401);
+    const unknown = await app.inject({
+      method: "POST",
+      url: "/api/demo/scenarios/arbitrary",
+      headers: { authorization: "Bearer invalid" }
+    });
+    expect(unknown.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("returns the common 429 response when the authenticated limit is exceeded", async () => {
+    const app = createApp({
+      db: dbMock(),
+      config: { ...config, rateLimits: { ...config.rateLimits, authenticated: 1 } }
+    });
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/projects",
+          headers: { authorization: "Bearer invalid" }
+        })
+      ).statusCode
+    ).toBe(401);
+    const limited = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+      headers: { authorization: "Bearer invalid" }
+    });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json().error.code).toBe("RATE_LIMITED");
     await app.close();
   });
 });

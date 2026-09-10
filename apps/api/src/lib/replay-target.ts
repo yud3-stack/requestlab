@@ -5,7 +5,8 @@ export function buildReplayTarget(
   baseUrl: string | null,
   path: string,
   production: boolean,
-  allowPrivate: boolean
+  allowPrivate: boolean,
+  allowedHosts: string[] = []
 ): string {
   if (!baseUrl || path.startsWith("//"))
     throw new AppError("REPLAY_TARGET_INVALID", "Replay target is invalid", 400);
@@ -26,6 +27,12 @@ export function buildReplayTarget(
     target.password
   )
     throw new AppError("REPLAY_TARGET_INVALID", "Replay target is invalid", 400);
+  if (
+    production &&
+    (target.protocol !== "https:" ||
+      (allowedHosts.length > 0 && !allowedHosts.includes(target.hostname.toLowerCase())))
+  )
+    throw new AppError("REPLAY_TARGET_INVALID", "Replay target is not allowed", 400);
   if (production || (!allowPrivate && isPrivateHost(target.hostname)))
     throw new AppError("REPLAY_TARGET_INVALID", "Replay target is not allowed", 400);
   return target.toString();

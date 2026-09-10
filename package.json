@@ -18,6 +18,8 @@
     "db:validate": "corepack pnpm --filter @requestlab/database db:validate",
     "db:migrate": "corepack pnpm --filter @requestlab/database db:migrate",
     "db:seed": "corepack pnpm --filter @requestlab/database db:seed",
+    "demo:cleanup": "tsx scripts/demo-cleanup.ts",
+    "deploy:check": "node scripts/deploy-check.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {

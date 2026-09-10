@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { CreateEnvironmentInputSchema } from "@requestlab/shared";
 import { assertAdminRole, requireProjectMember } from "../../lib/auth.js";
-import { validationError } from "../../lib/errors.js";
+import { AppError, validationError } from "../../lib/errors.js";
 import type { AppContext } from "../../types/context.js";
 
 export function registerEnvironmentRoutes(app: FastifyInstance, context: AppContext): void {
@@ -21,6 +21,8 @@ export function registerEnvironmentRoutes(app: FastifyInstance, context: AppCont
   app.post<{ Params: { projectId: string } }>(
     "/api/projects/:projectId/environments",
     async (request, reply) => {
+      if (context.config.nodeEnv === "production" && request.headers.authorization)
+        throw new AppError("FORBIDDEN", "Demo sessions cannot change environments", 403);
       const { projectId } = request.params;
       const { membership } = await requireProjectMember(request, context, projectId);
       assertAdminRole(membership.role);

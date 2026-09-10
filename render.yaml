@@ -1,0 +1,72 @@
+services:
+  - type: web
+    name: requestlab-api
+    runtime: node
+    plan: free
+    buildCommand: corepack pnpm install --frozen-lockfile && corepack pnpm --filter @requestlab/api... build
+    startCommand: corepack pnpm --filter @requestlab/api start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.19.0
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: DEMO_SESSION_SECRET
+        sync: false
+      - key: DEMO_TRIGGER_SECRET
+        sync: false
+      - key: DEMO_API_BASE_URL
+        value: https://demo.requestlab.yusufdere.com
+      - key: DEMO_PROJECT_SLUG
+        value: requestlab-demo
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://requestlab.yusufdere.com
+      - key: RUN_REPLAY_WORKER
+        value: "true"
+      - key: ALLOW_PRIVATE_REPLAY_TARGETS
+        value: "false"
+      - key: REPLAY_ALLOWED_HOSTS
+        value: demo.requestlab.yusufdere.com
+      - key: REPLAY_TIMEOUT_MS
+        value: "10000"
+      - key: REPLAY_MAX_RESPONSE_BYTES
+        value: "131072"
+      - key: TRUST_PROXY
+        value: "true"
+      - key: RATE_LIMIT_DEMO_SESSION
+        value: "10"
+      - key: RATE_LIMIT_DEMO_SCENARIO
+        value: "20"
+      - key: RATE_LIMIT_REPLAY_CREATE
+        value: "10"
+      - key: RATE_LIMIT_AUTHENTICATED
+        value: "120"
+
+  - type: web
+    name: requestlab-demo-api
+    runtime: node
+    plan: free
+    buildCommand: corepack pnpm install --frozen-lockfile && corepack pnpm --filter @requestlab/demo-api... build
+    startCommand: corepack pnpm --filter @requestlab/demo-api start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.19.0
+      - key: NODE_ENV
+        value: production
+      - key: REQUESTLAB_API_URL
+        value: https://api.requestlab.yusufdere.com
+      - key: REQUESTLAB_API_KEY
+        sync: false
+      - key: DEMO_TRIGGER_SECRET
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        value: ""
+      - key: REQUESTLAB_ENVIRONMENT
+        value: production
+      - key: REQUESTLAB_CAPTURE_MODE
+        value: all

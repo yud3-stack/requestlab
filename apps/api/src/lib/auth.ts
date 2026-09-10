@@ -2,11 +2,18 @@ import type { FastifyRequest } from "fastify";
 import type { ProjectMember, User } from "@prisma/client";
 import { AppError } from "./errors.js";
 import type { AppContext } from "../types/context.js";
+import { requireDemoSession } from "./demo-session.js";
 
 export async function requireUser(request: FastifyRequest, context: AppContext): Promise<User> {
-  const headerValue = request.headers["x-requestlab-user-id"];
+  const demoClaims =
+    context.config.nodeEnv === "production" && request.headers.authorization
+      ? requireDemoSession(request, context)
+      : undefined;
+  const headerValue =
+    context.config.nodeEnv === "production" ? undefined : request.headers["x-requestlab-user-id"];
   const headerUserId = Array.isArray(headerValue) ? headerValue[0] : headerValue;
   const userId =
+    demoClaims?.sub ??
     headerUserId ??
     (context.config.nodeEnv === "development" ? context.config.devUserId : undefined);
   if (!userId) {
@@ -24,6 +31,12 @@ export async function requireProjectMember(
   context: AppContext,
   projectId: string
 ): Promise<{ user: User; membership: ProjectMember }> {
+  const demoClaims =
+    context.config.nodeEnv === "production" && request.headers.authorization
+      ? requireDemoSession(request, context)
+      : undefined;
+  if (demoClaims && demoClaims.projectId !== projectId)
+    throw new AppError("FORBIDDEN", "Demo session cannot access this project", 403);
   const user = await requireUser(request, context);
   const membership = await context.db.projectMember.findUnique({
     where: { userId_projectId: { userId: user.id, projectId } }

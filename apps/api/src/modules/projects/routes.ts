@@ -1,20 +1,29 @@
 import type { FastifyInstance } from "fastify";
 import { CreateProjectInputSchema } from "@requestlab/shared";
 import { requireProjectMember, requireUser } from "../../lib/auth.js";
+import { isDemoSession, resolveDemoProject } from "../../lib/demo-session.js";
 import { AppError, validationError } from "../../lib/errors.js";
 import type { AppContext } from "../../types/context.js";
 
 export function registerProjectRoutes(app: FastifyInstance, context: AppContext): void {
   app.get("/api/projects", async (request) => {
     const user = await requireUser(request, context);
+    const demo =
+      context.config.nodeEnv === "production" && request.headers.authorization
+        ? isDemoSession(request, context)
+        : false;
     const projects = await context.db.project.findMany({
-      where: { memberships: { some: { userId: user.id } } },
+      where: demo
+        ? { id: (await resolveDemoProject(context)).id }
+        : { memberships: { some: { userId: user.id } } },
       orderBy: { createdAt: "desc" }
     });
     return { data: projects.map(toProject) };
   });
 
   app.post("/api/projects", async (request, reply) => {
+    if (context.config.nodeEnv === "production" && request.headers.authorization)
+      throw new AppError("FORBIDDEN", "Demo sessions cannot create projects", 403);
     const user = await requireUser(request, context);
     const input = CreateProjectInputSchema.safeParse(request.body);
     if (!input.success) throw validationError("Invalid project input", input.error.issues);

@@ -697,6 +697,14 @@ a {
 .replay-button {
   margin-top: 20px;
 }
+.demo-scenarios {
+  margin-bottom: 20px;
+}
+.demo-scenario-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .readonly-url {
   padding: 11px 13px;
   border: 1px solid #293750;

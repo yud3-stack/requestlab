@@ -132,4 +132,37 @@ describe("demo API scenarios", () => {
     expect(sent.some((event) => event.requestId === "demo-request-id")).toBe(true);
     await app.close();
   });
+
+  it("protects the server-side scenario trigger and accepts only predefined scenarios", async () => {
+    const app = createDemoApp({
+      logger: false,
+      nodeEnv: "production",
+      triggerSecret: "trigger-test"
+    });
+    const unauthorized = await app.inject({
+      method: "POST",
+      url: "/internal/demo/scenarios/order-error"
+    });
+    const error = await app.inject({
+      method: "POST",
+      url: "/internal/demo/scenarios/order-error",
+      headers: { "x-requestlab-demo-secret": "wrong" }
+    });
+    const order = await app.inject({
+      method: "POST",
+      url: "/internal/demo/scenarios/order-error",
+      headers: { "x-requestlab-demo-secret": "trigger-test" },
+      payload: { arbitrary: true }
+    });
+    const unknown = await app.inject({
+      method: "POST",
+      url: "/internal/demo/scenarios/arbitrary",
+      headers: { "x-requestlab-demo-secret": "trigger-test" }
+    });
+    expect(unauthorized.statusCode).toBe(401);
+    expect(error.statusCode).toBe(401);
+    expect(order.statusCode).toBe(500);
+    expect(unknown.statusCode).toBe(404);
+    await app.close();
+  });
 });

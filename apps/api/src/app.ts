@@ -12,11 +12,16 @@ import { registerProjectRoutes } from "./modules/projects/routes.js";
 import { registerReplayRoutes } from "./modules/replays/routes.js";
 import type { AppContext } from "./types/context.js";
 import type { ReplayQueue } from "./lib/replay-queue.js";
+import { startReplayWorker } from "@requestlab/worker";
+import { registerDemoRoutes } from "./modules/demo/routes.js";
+import { RateLimiter, clientKey } from "./lib/rate-limit.js";
+import type { ReplayWorkerHandle } from "@requestlab/worker";
 
 export type AppOptions = {
   db?: typeof prisma;
   config?: AppConfig;
   replayQueue?: ReplayQueue;
+  replayWorker?: ReplayWorkerHandle;
 };
 
 export function createApp(options: AppOptions = {}): FastifyInstance {
@@ -26,23 +31,87 @@ export function createApp(options: AppOptions = {}): FastifyInstance {
     config,
     replayQueue: options.replayQueue ?? createReplayQueue(config.redisUrl)
   };
-  const app = Fastify({ logger: true, bodyLimit: 1024 * 1024 });
+  const app = Fastify({
+    logger: {
+      redact: {
+        paths: [
+          "req.headers.authorization",
+          "req.headers.cookie",
+          "req.headers.set-cookie",
+          "req.headers.x-api-key",
+          "req.headers.x-requestlab-api-key",
+          "req.headers.x-requestlab-key",
+          "req.headers.x-requestlab-demo-secret",
+          "req.url"
+        ],
+        censor: "[REDACTED]"
+      }
+    },
+    bodyLimit: 1024 * 1024,
+    trustProxy: config.trustProxy
+  });
+
+  if (!options.replayWorker && config.runReplayWorker && config.redisUrl) {
+    try {
+      context.replayWorker = startReplayWorker({
+        redisUrl: config.redisUrl,
+        allowPrivate: config.allowPrivateReplayTargets === true,
+        allowedHosts: config.replayAllowedHosts,
+        timeoutMs: config.replayTimeoutMs ?? 10000,
+        maxBytes: config.replayMaxResponseBytes ?? 128 * 1024,
+        logger: (message) => app.log.error(message)
+      });
+    } catch {
+      app.log.error("Replay worker could not start");
+    }
+  }
+  if (options.replayWorker) context.replayWorker = options.replayWorker;
 
   const allowedOrigins = context.config.corsAllowedOrigins ?? [];
+  const limits = context.config.rateLimits ?? {
+    demoSession: 10,
+    demoScenario: 20,
+    replayCreate: 10,
+    authenticated: 120
+  };
+  const authenticatedLimiter = new RateLimiter(limits.authenticated, 60_000);
   app.register(cors, {
     origin: (origin, callback) => callback(null, !origin || allowedOrigins.includes(origin)),
-    allowedHeaders: ["Content-Type", "X-RequestLab-User-Id", "X-RequestLab-Key"],
+    allowedHeaders: [
+      "Authorization",
+      "Content-Type",
+      "X-RequestLab-Key",
+      "Idempotency-Key",
+      ...(config.nodeEnv === "production" ? [] : ["X-RequestLab-User-Id"])
+    ],
     methods: ["GET", "POST", "DELETE", "OPTIONS"]
   });
 
-  app.get<{ Reply: ServiceHealth }>("/health", async () => ({ status: "ok", service: "api" }));
+  app.addHook("onSend", async (request, reply) => {
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Referrer-Policy", "no-referrer");
+    reply.header("X-Frame-Options", "DENY");
+    reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    if (request.url.startsWith("/api/")) reply.header("Cache-Control", "no-store");
+  });
+  app.addHook("onRequest", async (request) => {
+    if (request.url.startsWith("/api/") && request.method !== "OPTIONS")
+      authenticatedLimiter.check(clientKey(request, "api"));
+  });
+  app.get<{ Reply: ServiceHealth & { worker?: string } }>("/health", async () => ({
+    status: "ok",
+    service: "api",
+    worker: context.replayWorker ? "running" : "disabled"
+  }));
   registerProjectRoutes(app, context);
   registerEnvironmentRoutes(app, context);
   registerApiKeyRoutes(app, context);
   registerEventRoutes(app, context);
   registerReplayRoutes(app, context);
+  registerDemoRoutes(app, context);
 
   app.addHook("onClose", async () => {
+    await context.replayWorker?.close();
     await context.replayQueue?.close();
   });
 

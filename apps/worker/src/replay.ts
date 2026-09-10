@@ -12,7 +12,10 @@ const blockedHeaders = new Set([
   "forwarded",
   "x-forwarded-for",
   "x-forwarded-host",
-  "x-real-ip"
+  "x-real-ip",
+  "x-requestlab-demo-secret",
+  "x-requestlab-api-key",
+  "x-api-key"
 ]);
 
 export type ReplayRecord = {
@@ -34,7 +37,13 @@ export type ReplayDb = {
 export async function executeReplay(
   db: ReplayDb,
   replayId: string,
-  options: { allowPrivate: boolean; timeoutMs: number; maxBytes: number; fetch?: typeof fetch }
+  options: {
+    allowPrivate: boolean;
+    allowedHosts?: string[];
+    timeoutMs: number;
+    maxBytes: number;
+    fetch?: typeof fetch;
+  }
 ): Promise<void> {
   const replay = await db.replayRun.findUnique({
     where: { id: replayId },
@@ -53,6 +62,8 @@ export async function executeReplay(
       replay.environment.type === "PRODUCTION"
     )
       throw new Error("invalid target");
+    if (options.allowedHosts?.length && !options.allowedHosts.includes(url.hostname.toLowerCase()))
+      throw new Error("target host is not allowed");
     await validateResolvedTarget(url.hostname, options.allowPrivate);
     const query = replay.requestQuery;
     if (query && typeof query === "object" && !Array.isArray(query))

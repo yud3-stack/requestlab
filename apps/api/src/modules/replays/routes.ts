@@ -6,6 +6,7 @@ import { AppError, validationError } from "../../lib/errors.js";
 import { maskSensitiveData } from "../../lib/masking.js";
 import { buildReplayTarget } from "../../lib/replay-target.js";
 import type { AppContext } from "../../types/context.js";
+import { RateLimiter, clientKey } from "../../lib/rate-limit.js";
 
 const writableMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const blockedHeaders = new Set([
@@ -20,14 +21,25 @@ const blockedHeaders = new Set([
   "forwarded",
   "x-forwarded-for",
   "x-forwarded-host",
-  "x-real-ip"
+  "x-real-ip",
+  "x-requestlab-demo-secret",
+  "x-requestlab-api-key",
+  "x-api-key"
 ]);
 
 export function registerReplayRoutes(app: FastifyInstance, context: AppContext): void {
+  const limits = context.config.rateLimits ?? {
+    demoSession: 10,
+    demoScenario: 20,
+    replayCreate: 10,
+    authenticated: 120
+  };
+  const replayLimiter = new RateLimiter(limits.replayCreate, 10 * 60_000);
   app.post<{ Params: { projectId: string; eventId: string } }>(
     "/api/projects/:projectId/events/:eventId/replays",
     async (request, reply) => {
       const { projectId, eventId } = request.params;
+      replayLimiter.check(clientKey(request, `replay:${projectId}`));
       const { user, membership } = await requireProjectMember(request, context, projectId);
       if (membership.role === "VIEWER")
         throw new AppError("REPLAY_NOT_ALLOWED", "Viewer users cannot create replays", 403);
@@ -59,7 +71,8 @@ export function registerReplayRoutes(app: FastifyInstance, context: AppContext):
         environment.baseUrl,
         event.path,
         environment.type === "PRODUCTION" || !environment.replayEnabled,
-        context.config.allowPrivateReplayTargets === true
+        context.config.allowPrivateReplayTargets === true,
+        context.config.replayAllowedHosts
       );
       const requestHeaders = safeHeaders(parsed.data.headers ?? event.requestHeaders);
       if (writableMethods.has(method))

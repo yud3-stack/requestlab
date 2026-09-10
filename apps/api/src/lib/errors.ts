@@ -13,6 +13,9 @@ export type ErrorCode =
   | "REPLAY_NOT_FOUND"
   | "REPLAY_TARGET_INVALID"
   | "REPLAY_DUPLICATE_JOB"
+  | "RATE_LIMITED"
+  | "DEMO_UNAVAILABLE"
+  | "DEMO_SCENARIO_NOT_FOUND"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {

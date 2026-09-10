@@ -50,6 +50,8 @@ import type { ApiKey, Environment, Project } from "./api";
 import { api, ApiError } from "./api";
 import "./styles.css";
 
+const publicDemoMode = import.meta.env.VITE_DEMO_MODE === "true";
+
 const client = new QueryClient({ defaultOptions: { queries: { staleTime: 10_000, retry: 1 } } });
 const navItems = [
   { to: "/", label: "Genel Bakış", icon: LayoutDashboard },
@@ -272,6 +274,7 @@ function Overview({ projectId, environmentId }: { projectId: string; environment
   return (
     <Page title="Genel Bakış" subtitle="Gerçek API trafiğinizin sağlık görünümü">
       <Toolbar onRefresh={() => stats.refetch()} loading={stats.isFetching} />
+      {publicDemoMode && <DemoScenarios />}
       {stats.isLoading ? (
         <SkeletonGrid />
       ) : stats.isError ? (
@@ -280,6 +283,62 @@ function Overview({ projectId, environmentId }: { projectId: string; environment
         <OverviewContent stats={stats.data!.data} />
       )}
     </Page>
+  );
+}
+
+function DemoScenarios() {
+  const [running, setRunning] = useState<string>("");
+  const [message, setMessage] = useState("");
+  const run = async (scenario: "order-error" | "login-error" | "slow-request") => {
+    setRunning(scenario);
+    setMessage("");
+    try {
+      const result = await api.demoScenario(scenario);
+      setMessage(`${scenario}: ${result.data.statusCode}`);
+    } catch {
+      setMessage("Demo senaryosu şu anda kullanılamıyor.");
+    } finally {
+      setRunning("");
+    }
+  };
+  return (
+    <section className="panel demo-scenarios">
+      <div className="panel-title">
+        <div>
+          <span className="eyebrow">PUBLIC DEMO</span>
+          <h2>Hazır hata senaryoları</h2>
+        </div>
+      </div>
+      <p className="field-help">RequestLab dashboard'ında güvenli örnek event üretin.</p>
+      <div className="demo-scenario-actions">
+        <button
+          className="ghost-button"
+          disabled={Boolean(running)}
+          onClick={() => run("order-error")}
+        >
+          Eksik shippingAddress (500)
+        </button>
+        <button
+          className="ghost-button"
+          disabled={Boolean(running)}
+          onClick={() => run("login-error")}
+        >
+          Hatalı login (401)
+        </button>
+        <button
+          className="ghost-button"
+          disabled={Boolean(running)}
+          onClick={() => run("slow-request")}
+        >
+          Slow request (1500 ms)
+        </button>
+      </div>
+      {message && (
+        <p role="status" className="field-help">
+          {message}
+        </p>
+      )}
+    </section>
   );
 }
 function OverviewContent({ stats }: { stats: EventStats }) {

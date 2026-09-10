@@ -6,6 +6,7 @@ import {
   type RequestLabOptions
 } from "@requestlab/sdk-node";
 import { randomUUID } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 
 type Product = { id: string; name: string; price: number; stock: number };
 type Order = {
@@ -29,6 +30,9 @@ export class DemoError extends Error {
 export type DemoAppOptions = {
   requestLab?: RequestLabOptions;
   logger?: boolean;
+  nodeEnv?: string;
+  triggerSecret?: string;
+  corsAllowedOrigins?: string[];
 };
 
 const products: Product[] = [
@@ -38,7 +42,46 @@ const products: Product[] = [
 ];
 
 export function createDemoApp(options: DemoAppOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: options.logger ?? true });
+  const app = Fastify({
+    logger:
+      options.logger === false
+        ? false
+        : {
+            redact: {
+              paths: [
+                "req.headers.authorization",
+                "req.headers.cookie",
+                "req.headers.set-cookie",
+                "req.headers.x-api-key",
+                "req.headers.x-requestlab-api-key",
+                "req.headers.x-requestlab-key",
+                "req.headers.x-requestlab-demo-secret",
+                "req.url"
+              ],
+              censor: "[REDACTED]"
+            }
+          },
+    trustProxy: process.env.TRUST_PROXY === "true"
+  });
+  app.addHook("onRequest", async (request, reply) => {
+    const origin = request.headers.origin;
+    if (origin && !(options.corsAllowedOrigins ?? []).includes(origin))
+      return reply
+        .status(403)
+        .send({ error: { code: "FORBIDDEN", message: "Origin is not allowed" } });
+    if (request.method === "OPTIONS") return reply.status(204).send();
+  });
+  app.addHook("onSend", async (request, reply) => {
+    const origin = request.headers.origin;
+    if (origin && (options.corsAllowedOrigins ?? []).includes(origin))
+      reply.header("Access-Control-Allow-Origin", origin);
+    reply.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    reply.header("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key");
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Referrer-Policy", "no-referrer");
+    reply.header("X-Frame-Options", "DENY");
+    if (request.url.startsWith("/api/")) reply.header("Cache-Control", "no-store");
+  });
   const orders = new Map<string, Order>([
     [
       "order-1",
@@ -155,6 +198,47 @@ export function createDemoApp(options: DemoAppOptions = {}): FastifyInstance {
     ]
   }));
 
+  app.post<{ Params: { scenario: string } }>(
+    "/internal/demo/scenarios/:scenario",
+    async (request, reply) => {
+      if (options.nodeEnv === "production" && !options.triggerSecret)
+        return reply.status(503).send({
+          error: { code: "DEMO_TRIGGER_UNAVAILABLE", message: "Scenario trigger is unavailable" }
+        });
+      const supplied = getHeader(request.headers["x-requestlab-demo-secret"]);
+      if (options.triggerSecret && !safeEqual(supplied, options.triggerSecret))
+        return reply
+          .status(401)
+          .send({ error: { code: "UNAUTHORIZED", message: "Invalid scenario trigger" } });
+      if (options.nodeEnv === "production" && !options.triggerSecret)
+        return reply.status(503).send({
+          error: { code: "DEMO_TRIGGER_UNAVAILABLE", message: "Scenario trigger is unavailable" }
+        });
+      const scenario = request.params.scenario;
+      if (!["order-error", "login-error", "slow-request"].includes(scenario))
+        return reply
+          .status(404)
+          .send({ error: { code: "SCENARIO_NOT_FOUND", message: "Demo scenario was not found" } });
+      const result =
+        scenario === "order-error"
+          ? await app.inject({
+              method: "POST",
+              url: "/api/orders",
+              payload: { productId: "product-1", quantity: 1 }
+            })
+          : scenario === "login-error"
+            ? await app.inject({
+                method: "POST",
+                url: "/api/auth/login",
+                payload: { email: "invalid@example.com", password: "invalid" }
+              })
+            : await app.inject({ method: "GET", url: "/api/demo/slow?delayMs=1500" });
+      return reply
+        .status(result.statusCode)
+        .send({ data: { scenario, statusCode: result.statusCode } });
+    }
+  );
+
   app.setErrorHandler((error, request, reply) => {
     request.log.error(
       { code: error instanceof DemoError ? error.code : "INTERNAL_ERROR" },
@@ -173,4 +257,11 @@ export function createDemoApp(options: DemoAppOptions = {}): FastifyInstance {
 
 function getHeader(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function safeEqual(value: string | undefined, expected: string): boolean {
+  if (!value) return false;
+  const actual = Buffer.from(value);
+  const target = Buffer.from(expected);
+  return actual.length === target.length && timingSafeEqual(actual, target);
 }

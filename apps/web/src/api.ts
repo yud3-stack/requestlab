@@ -53,9 +53,12 @@ export type EventPage = {
 
 const baseUrl = import.meta.env.VITE_REQUESTLAB_API_URL || "http://localhost:3001";
 const devUserId = import.meta.env.VITE_REQUESTLAB_DEV_USER_ID;
+const demoMode = import.meta.env.VITE_DEMO_MODE === "true";
+let demoToken: string | undefined;
+let demoSessionPromise: Promise<string> | undefined;
 
 export function getRequestHeaders(userId = devUserId): HeadersInit | undefined {
-  return userId ? { "x-requestlab-user-id": userId } : undefined;
+  return !demoMode && userId ? { "x-requestlab-user-id": userId } : undefined;
 }
 
 export class ApiError extends Error {
@@ -68,7 +71,32 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, signal?: AbortSignal, init: RequestInit = {}): Promise<T> {
+async function getDemoToken(): Promise<string> {
+  if (demoToken) return demoToken;
+  if (!demoSessionPromise) {
+    demoSessionPromise = fetch(`${baseUrl.replace(/\/$/, "")}/api/demo/session`, { method: "POST" })
+      .then(async (response) => {
+        if (!response.ok)
+          throw new ApiError(response.status, "Public demo session could not be created.");
+        const body = (await response.json()) as { data?: { token?: string } };
+        if (!body.data?.token) throw new ApiError(503, "Public demo session is unavailable.");
+        demoToken = body.data.token;
+        return demoToken;
+      })
+      .finally(() => {
+        demoSessionPromise = undefined;
+      });
+  }
+  return demoSessionPromise;
+}
+
+async function request<T>(
+  path: string,
+  signal?: AbortSignal,
+  init: RequestInit = {},
+  retryDemo = true
+): Promise<T> {
+  const demoBearer = demoMode && path !== "/api/demo/session" ? await getDemoToken() : undefined;
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 8000);
   const abort = () => controller.abort();
@@ -76,7 +104,11 @@ async function request<T>(path: string, signal?: AbortSignal, init: RequestInit 
   try {
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
       ...init,
-      headers: { ...(init.headers ?? {}), ...(getRequestHeaders() ?? {}) },
+      headers: {
+        ...(init.headers ?? {}),
+        ...(getRequestHeaders() ?? {}),
+        ...(demoBearer ? { Authorization: `Bearer ${demoBearer}` } : {})
+      },
       signal: controller.signal
     });
     const text = await response.text();
@@ -87,6 +119,10 @@ async function request<T>(path: string, signal?: AbortSignal, init: RequestInit 
       throw new ApiError(response.status, "Sunucudan geçersiz JSON yanıtı alındı.");
     }
     if (!response.ok) {
+      if (demoMode && retryDemo && response.status === 401 && demoToken) {
+        demoToken = undefined;
+        return request<T>(path, signal, init, false);
+      }
       const message =
         typeof body === "object" &&
         body !== null &&
@@ -154,5 +190,11 @@ export const api = {
   ) => request<ReplayPage>(`/api/projects/${projectId}/replays?${queryString(params)}`, signal),
   replay: (projectId: string, replayId: string, signal?: AbortSignal) =>
     request<{ data: ReplayDetail }>(`/api/projects/${projectId}/replays/${replayId}`, signal),
+  demoScenario: (scenario: "order-error" | "login-error" | "slow-request") =>
+    request<{ data: { scenario: string; statusCode: number } }>(
+      `/api/demo/scenarios/${scenario}`,
+      undefined,
+      { method: "POST" }
+    ),
   health: (signal?: AbortSignal) => request<{ status: string; service: string }>("/health", signal)
 };

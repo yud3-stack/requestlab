@@ -7,6 +7,13 @@ const sensitiveKeys = new Set([
   "accesstoken",
   "refreshtoken",
   "secret",
+  "xrequestlabdemosecret",
+  "xrequestlabapikey",
+  "requestlabdemosecret",
+  "requestlabapikey",
+  "databaseurl",
+  "directurl",
+  "redisurl",
   "apikey",
   "creditcard",
   "cvv"

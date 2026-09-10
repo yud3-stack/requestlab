@@ -151,6 +151,8 @@ Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL`
 - CORS regression testleri: izinli preflight, doğru origin, user header allow-list, CORS'lu 401 ve izin­siz origin doğrulandı.
 - Aşama 5A replay testleri: 39 test başarılı; rol/proje/environment/production/confirmation, queue failure, target IP, redirect, header filtering, timeout, response limit, masking ve state transition doğrulandı.
 - `scripts/replay-smoke.mjs`: gerçek Upstash Redis + Supabase + demo API replay smoke testi başarılı; tüm başlatılan PID'ler kapatıldı ve smoke portları temiz doğrulandı.
+- Aşama 6A regression: `47` test başarılı; production user-header isolation, scoped/expiring demo session, demo API trigger allowlist ve rate-limit `429` doğrulandı.
+- Aşama 6A static checks: `db:validate`, workspace build, `typecheck`, `lint`, `deploy:check`, Prettier ve `git diff --check` başarılı. `db:generate` Windows Prisma engine DLL kilidi nedeniyle `EPERM` verdi; migration veya schema değiştirilmedi.
 
 Docker CLI bu ortamda bulunmadı; replay migration'ı güvenli GitHub Actions workflow'u üzerinden Supabase'e uygulandı. Migration geçmişi değiştirilmedi ve yeni migration üretimi yapılmadı. Gerçek Supabase veritabanı round-trip ve replay smoke doğrulaması tamamlandı. Event ID, API key ve bağlantı değerleri loglanmadı veya dokümana yazılmadı.
 
@@ -169,8 +171,18 @@ GitHub Actions migration workflow'u manuel `workflow_dispatch` ile başarıyla k
 
 Replay API, `ReplayRun` durumları ve worker sözleşmesi korunarak frontend akışı tamamlandı. Gerçek kullanıcı login'i, production deployment ve browser otomasyonlu görsel doğrulama bu aşamanın dışındadır.
 
-## Aşama 4 için başlangıç noktası
+## Aşama 6A durumu
 
-SDK ve demo API tamamlandı. Sonraki aşamada frontend dashboard, replay akışı veya Redis/worker işleme ele alınabilir. Gerçek Supabase SDK smoke testleri, geçerli API key ve URL ile ürün, 500 sipariş, 401 login, slow endpoint ve masking/detail doğrulamalarını kapsamalıdır.
+- Production config, exact CORS, security headers, rate limits, demo session ve allowlisted demo scenarios için hazırlık eklendi.
+- `RUN_REPLAY_WORKER=true` ile API aynı process içinde replay worker başlatabilir; shutdown sırasında worker, queue ve database bağlantıları kapatılır. Ayrı worker uygulaması local kullanımda korunur.
+- Production'da `x-requestlab-user-id` kabul edilmez. Public demo bearer token kısa ömürlüdür, yalnızca demo project scope'una sahiptir ve browser belleğinde tutulur.
+- Vercel `vercel.json`, iki servisli Render `render.yaml`, `demo:cleanup`, günlük/manual cleanup workflow'u ve `deploy:check` eklendi.
+- Gerçek deployment, DNS, Vercel/Render/Supabase/Upstash değişikliği ve LinkedIn paylaşımı yapılmadı.
+- Render free servislerinin sleep/cold-start davranışı ve uygulanmamış Aşama 6B deployment checklist'i `docs/deployment.md` içindedir.
+- Browser otomasyonu mevcut değildir; gerçek Vercel/Render/Supabase/Upstash doğrulaması ve manuel browser kontrolü Aşama 6B'ye bırakıldı.
+
+## Sonraki aşama
+
+Deployment checklist'ini uygulamak Aşama 6B kapsamındadır. Bu aşamada gerçek service/DNS değişikliği yapılmamalıdır.
 
 Her sonraki aşamanın sonunda bu dosya güncellenmelidir.

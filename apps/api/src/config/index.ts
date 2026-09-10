@@ -7,6 +7,19 @@ export type AppConfig = {
   allowPrivateReplayTargets?: boolean;
   replayTimeoutMs?: number;
   replayMaxResponseBytes?: number;
+  replayAllowedHosts?: string[];
+  runReplayWorker?: boolean;
+  demoSessionSecret?: string;
+  demoTriggerSecret?: string;
+  demoApiBaseUrl?: string;
+  demoProjectSlug?: string;
+  trustProxy?: boolean;
+  rateLimits?: {
+    demoSession: number;
+    demoScenario: number;
+    replayCreate: number;
+    authenticated: number;
+  };
 };
 
 const developmentOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"];
@@ -16,6 +29,15 @@ function parseOrigins(value: string | undefined): string[] {
     value
       ?.split(",")
       .map((origin) => origin.trim())
+      .filter(Boolean) ?? []
+  );
+}
+
+function parseList(value: string | undefined): string[] {
+  return (
+    value
+      ?.split(",")
+      .map((item) => item.trim().toLowerCase())
       .filter(Boolean) ?? []
   );
 }
@@ -31,6 +53,22 @@ export function loadConfig(): AppConfig {
       process.env.NODE_ENV === "development" && process.env.ALLOW_PRIVATE_REPLAY_TARGETS === "true",
     replayTimeoutMs: Number(process.env.REPLAY_TIMEOUT_MS ?? 10000),
     replayMaxResponseBytes: Number(process.env.REPLAY_MAX_RESPONSE_BYTES ?? 128 * 1024),
+    replayAllowedHosts:
+      process.env.NODE_ENV === "production"
+        ? parseList(process.env.REPLAY_ALLOWED_HOSTS || "demo.requestlab.yusufdere.com")
+        : parseList(process.env.REPLAY_ALLOWED_HOSTS),
+    runReplayWorker: process.env.RUN_REPLAY_WORKER === "true",
+    demoSessionSecret: process.env.DEMO_SESSION_SECRET || undefined,
+    demoTriggerSecret: process.env.DEMO_TRIGGER_SECRET || undefined,
+    demoApiBaseUrl: process.env.DEMO_API_BASE_URL || undefined,
+    demoProjectSlug: process.env.DEMO_PROJECT_SLUG || "requestlab-demo",
+    trustProxy: process.env.TRUST_PROXY === "true",
+    rateLimits: {
+      demoSession: Number(process.env.RATE_LIMIT_DEMO_SESSION ?? 10),
+      demoScenario: Number(process.env.RATE_LIMIT_DEMO_SCENARIO ?? 20),
+      replayCreate: Number(process.env.RATE_LIMIT_REPLAY_CREATE ?? 10),
+      authenticated: Number(process.env.RATE_LIMIT_AUTHENTICATED ?? 120)
+    },
     corsAllowedOrigins:
       process.env.NODE_ENV === "production"
         ? configuredOrigins
