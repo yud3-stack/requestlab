@@ -47,12 +47,14 @@ import {
   type RequestEventSummary
 } from "@requestlab/shared";
 import type { ApiKey, Environment, Project } from "./api";
-import { api, ApiError } from "./api";
+import { api, ApiError, ensureDemoSession, resetDemoSession } from "./api";
 import "./styles.css";
 
 const publicDemoMode = import.meta.env.VITE_DEMO_MODE === "true";
 
-const client = new QueryClient({ defaultOptions: { queries: { staleTime: 10_000, retry: 1 } } });
+const client = new QueryClient({
+  defaultOptions: { queries: { staleTime: 10_000, retry: false } }
+});
 const navItems = [
   { to: "/", label: "Genel Bakış", icon: LayoutDashboard },
   { to: "/requests", label: "İstekler", icon: Activity },
@@ -60,8 +62,20 @@ const navItems = [
   { to: "/settings", label: "Ayarlar", icon: Settings }
 ];
 
-export function App() {
-  const projects = useQuery({ queryKey: ["projects"], queryFn: api.projects });
+export function App({ demoMode = publicDemoMode }: { demoMode?: boolean } = {}) {
+  const demoSession = useQuery({
+    queryKey: ["demo-session"],
+    queryFn: ensureDemoSession,
+    enabled: demoMode,
+    staleTime: 25 * 60_000,
+    retry: false
+  });
+  const projects = useQuery({
+    queryKey: ["projects"],
+    queryFn: ({ signal }) => api.projects(signal),
+    enabled: !demoMode || demoSession.isSuccess,
+    retry: false
+  });
   const [projectId, setProjectId] = useState(
     () => localStorage.getItem("requestlab-project") || ""
   );
@@ -73,20 +87,26 @@ export function App() {
       localStorage.setItem("requestlab-project", project.id);
     }
   }, [project]);
-  if (projects.isLoading)
+  if (demoMode && demoSession.isPending) return <StartupLoading label="Projeler yükleniyor..." />;
+  if (demoMode && demoSession.isError)
     return (
-      <div className="center-state">
-        <Spinner />
-        <span>Projeler yükleniyor...</span>
-      </div>
+      <StartupError
+        error={demoSession.error}
+        onRetry={() => {
+          resetDemoSession();
+          void demoSession.refetch();
+        }}
+        retrying={demoSession.isFetching}
+      />
     );
+  if (projects.isLoading) return <StartupLoading label="Projeler yükleniyor..." />;
   if (projects.isError || !project)
     return (
-      <div className="center-state">
-        <AlertTriangle />
-        <strong>Project verisi alınamadı</strong>
-        <p>{errorMessage(projects.error)}</p>
-      </div>
+      <StartupError
+        error={projects.error}
+        onRetry={() => void projects.refetch()}
+        retrying={projects.isFetching}
+      />
     );
   return (
     <Shell
@@ -111,7 +131,7 @@ function Shell({
 }) {
   const environments = useQuery({
     queryKey: ["environments", projectId],
-    queryFn: () => api.environments(projectId)
+    queryFn: ({ signal }) => api.environments(projectId, signal)
   });
   const [environmentId, setEnvironmentId] = useState(
     () => localStorage.getItem("requestlab-environment") || ""
@@ -255,7 +275,7 @@ function Shell({
 function Connection() {
   const health = useQuery({
     queryKey: ["health"],
-    queryFn: () => api.health(),
+    queryFn: ({ signal }) => api.health(signal),
     refetchInterval: 30_000
   });
   return (
@@ -268,14 +288,15 @@ function Connection() {
 function Overview({ projectId, environmentId }: { projectId: string; environmentId?: string }) {
   const stats = useQuery({
     queryKey: ["stats", projectId, environmentId],
-    queryFn: () => api.stats(projectId, { environmentId }),
+    queryFn: ({ signal }) => api.stats(projectId, { environmentId }, signal),
+    enabled: Boolean(environmentId),
     refetchInterval: 30_000
   });
   return (
     <Page title="Genel Bakış" subtitle="Gerçek API trafiğinizin sağlık görünümü">
       <Toolbar onRefresh={() => stats.refetch()} loading={stats.isFetching} />
       {publicDemoMode && <DemoScenarios />}
-      {stats.isLoading ? (
+      {stats.isLoading || !environmentId ? (
         <SkeletonGrid />
       ) : stats.isError ? (
         <ErrorState error={stats.error} />
@@ -438,11 +459,7 @@ function OverviewContent({ stats }: { stats: EventStats }) {
 function Requests({ projectId, environments }: { projectId: string; environments: Environment[] }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const environmentQuery = useQuery({
-    queryKey: ["environments", projectId],
-    queryFn: () => api.environments(projectId)
-  });
-  const availableEnvironments = environmentQuery.data?.data || environments;
+  const availableEnvironments = environments;
   const params = new URLSearchParams(location.search);
   const [search, setSearch] = useState(params.get("search") || "");
   const [debounced, setDebounced] = useState(search);
@@ -1038,13 +1055,17 @@ function Replays({ projectId, environments }: { projectId: string; environments:
   const [page, setPage] = useState(1);
   const result = useQuery({
     queryKey: ["replays", projectId, status, environmentId, page],
-    queryFn: () =>
-      api.replays(projectId, {
-        status: status || undefined,
-        environmentId: environmentId || undefined,
-        page,
-        pageSize: 20
-      }),
+    queryFn: ({ signal }) =>
+      api.replays(
+        projectId,
+        {
+          status: status || undefined,
+          environmentId: environmentId || undefined,
+          page,
+          pageSize: 20
+        },
+        signal
+      ),
     refetchInterval: 15_000
   });
   return (
@@ -1145,7 +1166,7 @@ function ReplayDetailPage({
   });
   const original = useQuery({
     queryKey: ["event", projectId, replay.data?.data.originalEventId],
-    queryFn: () => api.event(projectId, replay.data!.data.originalEventId),
+    queryFn: ({ signal }) => api.event(projectId, replay.data!.data.originalEventId, signal),
     enabled: Boolean(replay.data?.data.originalEventId)
   });
   useEffect(() => {
@@ -1533,7 +1554,10 @@ function SettingsPage({
   project: Project;
   environments: Environment[];
 }) {
-  const keys = useQuery({ queryKey: ["keys", project.id], queryFn: () => api.keys(project.id) });
+  const keys = useQuery({
+    queryKey: ["keys", project.id],
+    queryFn: ({ signal }) => api.keys(project.id, signal)
+  });
   return (
     <Page title="Ayarlar" subtitle="Proje ve ortam yapılandırması">
       <section className="settings-grid">
@@ -1679,6 +1703,49 @@ function ErrorState({ error }: { error: unknown }) {
       <AlertTriangle size={20} />
       <strong>Veriler alınamadı</strong>
       <span>{errorMessage(error)}</span>
+    </div>
+  );
+}
+function StartupLoading({ label }: { label: string }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlow(true), 2_500);
+    return () => window.clearTimeout(timer);
+  }, []);
+  return (
+    <div className="center-state">
+      <Spinner />
+      <span>
+        {slow
+          ? "Ücretsiz demo servisi başlatılıyor. Bu işlem ilk açılışta birkaç saniye sürebilir."
+          : label}
+      </span>
+    </div>
+  );
+}
+function StartupError({
+  error,
+  onRetry,
+  retrying
+}: {
+  error: unknown;
+  onRetry: () => void;
+  retrying: boolean;
+}) {
+  const timeout = error instanceof ApiError && [0, 408, 502, 503].includes(error.status);
+  return (
+    <div className="center-state">
+      <AlertTriangle />
+      <strong>{timeout ? "Ücretsiz demo başlatılamadı" : "Project verisi alınamadı"}</strong>
+      <p>
+        {timeout
+          ? "İlk bağlantı zaman aşımına uğradı. Lütfen tekrar deneyin."
+          : errorMessage(error)}
+      </p>
+      <button className="ghost-button" onClick={onRetry} disabled={retrying}>
+        <RefreshCw size={15} className={retrying ? "spin" : undefined} />
+        {retrying ? "Tekrar deneniyor..." : "Tekrar Dene"}
+      </button>
     </div>
   );
 }

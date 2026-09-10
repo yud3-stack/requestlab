@@ -54,7 +54,14 @@ export type EventPage = {
 const baseUrl = import.meta.env.VITE_REQUESTLAB_API_URL || "http://localhost:3001";
 const devUserId = import.meta.env.VITE_REQUESTLAB_DEV_USER_ID;
 const demoMode = import.meta.env.VITE_DEMO_MODE === "true";
+const DEFAULT_TIMEOUT_MS = 8_000;
+const PUBLIC_DEMO_TIMEOUT_MS = 45_000;
+const RETRY_BACKOFF_MS = 250;
+const DEMO_TOKEN_REFRESH_SKEW_MS = 60_000;
+const MAX_RETRIES = 1;
+const RETRYABLE_STATUS_CODES = new Set([502, 503]);
 let demoToken: string | undefined;
+let demoTokenExpiresAt = 0;
 let demoSessionPromise: Promise<string> | undefined;
 
 export function getRequestHeaders(userId = devUserId): HeadersInit | undefined {
@@ -71,17 +78,31 @@ export class ApiError extends Error {
   }
 }
 
-async function getDemoToken(): Promise<string> {
-  if (demoToken) return demoToken;
+export function resetDemoSession(): void {
+  demoToken = undefined;
+  demoTokenExpiresAt = 0;
+}
+
+function hasValidDemoToken(): boolean {
+  return Boolean(demoToken && Date.now() < demoTokenExpiresAt - DEMO_TOKEN_REFRESH_SKEW_MS);
+}
+
+export async function ensureDemoSession(): Promise<string> {
+  if (hasValidDemoToken()) return demoToken!;
   if (!demoSessionPromise) {
-    demoSessionPromise = fetch(`${baseUrl.replace(/\/$/, "")}/api/demo/session`, { method: "POST" })
-      .then(async (response) => {
-        if (!response.ok)
-          throw new ApiError(response.status, "Public demo session could not be created.");
-        const body = (await response.json()) as { data?: { token?: string } };
-        if (!body.data?.token) throw new ApiError(503, "Public demo session is unavailable.");
-        demoToken = body.data.token;
-        return demoToken;
+    demoSessionPromise = request<{
+      data?: { token?: string; expiresInSeconds?: number };
+    }>("/api/demo/session", undefined, { method: "POST" })
+      .then((body) => {
+        const token = body.data?.token;
+        if (!token) throw new ApiError(503, "Public demo session is unavailable.");
+        demoToken = token;
+        const expiresInSeconds = body.data?.expiresInSeconds;
+        demoTokenExpiresAt =
+          typeof expiresInSeconds === "number" && expiresInSeconds > 0
+            ? Date.now() + expiresInSeconds * 1_000
+            : tokenExpiry(token);
+        return token;
       })
       .finally(() => {
         demoSessionPromise = undefined;
@@ -90,15 +111,63 @@ async function getDemoToken(): Promise<string> {
   return demoSessionPromise;
 }
 
+function tokenExpiry(token: string): number {
+  try {
+    const encoded = token.split(".")[0];
+    if (!encoded) return 0;
+    const claims = JSON.parse(atob(encoded.replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof claims.exp === "number" ? claims.exp * 1_000 : 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function request<T>(
   path: string,
   signal?: AbortSignal,
   init: RequestInit = {},
   retryDemo = true
 ): Promise<T> {
-  const demoBearer = demoMode && path !== "/api/demo/session" ? await getDemoToken() : undefined;
+  const method = (init.method ?? "GET").toUpperCase();
+  const isSessionRequest = path === "/api/demo/session";
+  const maxRetries = isSessionRequest || method === "GET" ? MAX_RETRIES : 0;
+  let attempt = 0;
+  while (true) {
+    const demoBearer = demoMode && !isSessionRequest ? await ensureDemoSession() : undefined;
+    try {
+      return await requestOnce<T>(path, signal, init, demoBearer);
+    } catch (error) {
+      if (demoMode && retryDemo && error instanceof ApiError && error.status === 401) {
+        resetDemoSession();
+        return request<T>(path, signal, init, false);
+      }
+      if (attempt < maxRetries && shouldRetry(error, method) && !signal?.aborted) {
+        attempt += 1;
+        await delay(RETRY_BACKOFF_MS);
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+async function requestOnce<T>(
+  path: string,
+  signal: AbortSignal | undefined,
+  init: RequestInit,
+  demoBearer: string | undefined
+): Promise<T> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 8000);
+  const isSessionRequest = path === "/api/demo/session";
+  const timeoutMs =
+    isSessionRequest || (demoMode && path === "/api/projects")
+      ? PUBLIC_DEMO_TIMEOUT_MS
+      : DEFAULT_TIMEOUT_MS;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   const abort = () => controller.abort();
   signal?.addEventListener("abort", abort, { once: true });
   try {
@@ -119,10 +188,6 @@ async function request<T>(
       throw new ApiError(response.status, "Sunucudan geçersiz JSON yanıtı alındı.");
     }
     if (!response.ok) {
-      if (demoMode && retryDemo && response.status === 401 && demoToken) {
-        demoToken = undefined;
-        return request<T>(path, signal, init, false);
-      }
       const message =
         typeof body === "object" &&
         body !== null &&
@@ -138,13 +203,25 @@ async function request<T>(
     return body as T;
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    if (error instanceof DOMException && error.name === "AbortError")
+    if (error instanceof DOMException && error.name === "AbortError") {
+      if (signal?.aborted && !timedOut) throw new ApiError(0, "İstek iptal edildi.");
       throw new ApiError(408, "İstek zaman aşımına uğradı.");
+    }
     throw new ApiError(0, "RequestLab API'ye bağlanılamadı.");
   } finally {
-    window.clearTimeout(timer);
+    clearTimeout(timer);
     signal?.removeEventListener("abort", abort);
   }
+}
+
+function shouldRetry(error: unknown, method: string): boolean {
+  if (method !== "GET" && method !== "POST") return false;
+  if (!(error instanceof ApiError)) return false;
+  return error.status === 0 || error.status === 408 || RETRYABLE_STATUS_CODES.has(error.status);
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 function queryString(params: Record<string, string | number | undefined>) {
@@ -155,11 +232,13 @@ function queryString(params: Record<string, string | number | undefined>) {
 }
 
 export const api = {
-  projects: () => request<{ data: Project[] }>("/api/projects"),
-  project: (id: string) => request<{ data: Project }>(`/api/projects/${id}`),
-  environments: (id: string) =>
-    request<{ data: Environment[] }>(`/api/projects/${id}/environments`),
-  keys: (id: string) => request<{ data: ApiKey[] }>(`/api/projects/${id}/api-keys`),
+  projects: (signal?: AbortSignal) => request<{ data: Project[] }>("/api/projects", signal),
+  project: (id: string, signal?: AbortSignal) =>
+    request<{ data: Project }>(`/api/projects/${id}`, signal),
+  environments: (id: string, signal?: AbortSignal) =>
+    request<{ data: Environment[] }>(`/api/projects/${id}/environments`, signal),
+  keys: (id: string, signal?: AbortSignal) =>
+    request<{ data: ApiKey[] }>(`/api/projects/${id}/api-keys`, signal),
   events: (id: string, params: EventQuery, signal?: AbortSignal) =>
     request<EventPage>(`/api/projects/${id}/events?${queryString(params)}`, signal),
   stats: (

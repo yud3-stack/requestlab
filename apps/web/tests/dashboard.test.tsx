@@ -1,15 +1,23 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { App, diffJson, durationDelta } from "../src/main";
-import { api } from "../src/api";
+import { api, ApiError, ensureDemoSession } from "../src/api";
 
 vi.mock("../src/api", async () => {
   return {
-    ApiError: class extends Error {},
+    ApiError: class extends Error {
+      status: number;
+      constructor(status: number, message: string) {
+        super(message);
+        this.status = status;
+      }
+    },
+    ensureDemoSession: vi.fn(),
+    resetDemoSession: vi.fn(),
     api: {
       projects: vi.fn(),
       environments: vi.fn(),
@@ -85,12 +93,12 @@ const stats = {
   recentErrors: [event]
 };
 
-function renderApp(initial = "/") {
+function renderApp(initial = "/", demoMode = false) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initial]}>
-        <App />
+        <App demoMode={demoMode} />
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -151,6 +159,7 @@ function setup() {
 }
 
 afterEach(cleanup);
+afterEach(() => vi.useRealTimers());
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -162,6 +171,40 @@ describe("dashboard", () => {
     vi.mocked(api.projects).mockReturnValue(new Promise(() => undefined));
     renderApp();
     expect(screen.getByText("Projeler yükleniyor...")).toBeInTheDocument();
+  });
+  it("waits for the demo session before loading projects", async () => {
+    let resolveSession: ((token: string) => void) | undefined;
+    vi.mocked(ensureDemoSession).mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveSession = resolve;
+      })
+    );
+    renderApp("/", true);
+    expect(api.projects).not.toHaveBeenCalled();
+
+    resolveSession?.("rlk_test_session");
+    await waitFor(() => expect(api.projects).toHaveBeenCalledTimes(1));
+  });
+  it("shows a cold-start message after a few seconds", () => {
+    vi.useFakeTimers();
+    vi.mocked(ensureDemoSession).mockReturnValue(new Promise(() => undefined));
+    renderApp("/", true);
+    expect(screen.getByText("Projeler yükleniyor...")).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(2_500));
+    expect(
+      screen.getByText(
+        "Ücretsiz demo servisi başlatılıyor. Bu işlem ilk açılışta birkaç saniye sürebilir."
+      )
+    ).toBeInTheDocument();
+  });
+  it("retries a failed startup without reloading the page", async () => {
+    vi.mocked(ensureDemoSession)
+      .mockRejectedValueOnce(new ApiError(408, "İstek zaman aşımına uğradı."))
+      .mockResolvedValueOnce("rlk_test_session");
+    renderApp("/", true);
+    fireEvent.click(await screen.findByRole("button", { name: "Tekrar Dene" }));
+    await waitFor(() => expect(ensureDemoSession).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Toplam istek")).toBeInTheDocument();
   });
   it("shows real overview data", async () => {
     renderApp();
