@@ -2,15 +2,15 @@
 
 RequestLab, gerçek uygulamalarda oluşan API hatalarını kaydetmek, incelemek ve test ortamında yeniden çalıştırmak için geliştirilen bir geliştirici aracıdır.
 
-## Aşama 4 durumu
+## Aşama 5B durumu
 
-PostgreSQL veri modeli, Event API, Node SDK ve gerçek Supabase verileriyle çalışan frontend dashboard tamamlandı. Replay, Redis/worker işleme ve gerçek kullanıcı login'i bu aşamada yoktur.
+PostgreSQL veri modeli, Event API, Node SDK, replay backend'i ve gerçek Supabase verileriyle çalışan frontend dashboard tamamlandı. Replay frontend'i güvenli form, polling, liste/detay ve JSON karşılaştırma akışlarını içerir. Gerçek kullanıcı login'i ve production deployment kapsam dışıdır.
 
 ## Teknolojiler ve klasörler
 
 - `apps/api`: Fastify API, auth, maskeleme ve modüler route'lar
 - `apps/web`: React/Vite dashboard; overview, istekler, event detay drawer'ı, ayarlar ve responsive mobil menü
-- `apps/worker`: Aşama 1 başlangıç worker'ı; bu aşamada kullanılmaz
+- `apps/worker`: BullMQ replay worker'ı
 - `apps/demo-api`: SDK entegrasyonlu demo ürün, sipariş, login ve yavaş istek senaryoları
 - `packages/sdk-node`: Node.js event capture SDK'sı ve Fastify hook entegrasyonu
 - `packages/database`: Prisma client, schema, migration ve seed
@@ -166,7 +166,7 @@ Workflow Ubuntu runner üzerinde Node.js ve pnpm kurar, frozen lockfile ile bağ
 
 ## Sonraki aşamalar
 
-Replay JSON karşılaştırma ekranı, gerçek kullanıcı login sistemi ve production deployment sonraki aşamalardır. Replay frontend arayüzü bu aşamada değiştirilmemiştir.
+Gerçek kullanıcı login sistemi, production deployment ve browser otomasyonlu görsel regresyon sonraki aşamalardır.
 
 ## Dashboard
 
@@ -189,7 +189,13 @@ curl -X POST http://localhost:3001/api/projects/<PROJECT_ID>/events/<EVENT_ID>/r
   -d '{"environmentId":"<TEST_ENVIRONMENT_ID>","confirmSideEffects":true}'
 ```
 
-Replay migration'ı `20260909130000_replay_runs` adındadır. Yerel pooler erişimi yoksa mevcut GitHub Actions `Database Migration` workflow'u ile `DIRECT_URL` secret'ı üzerinden uygulanmalıdır. Seed scripti ReplayRun kayıtlarına dokunmaz; seed tekrar çalıştırıldığında replay geçmişi silinmez. JSON karşılaştırma ve replay frontend ekranı Aşama 5B kapsamındadır.
+Replay migration'ı `20260909130000_replay_runs` adındadır. Yerel pooler erişimi yoksa mevcut GitHub Actions `Database Migration` workflow'u ile `DIRECT_URL` secret'ı üzerinden uygulanmalıdır. Seed scripti ReplayRun kayıtlarına dokunmaz; seed tekrar çalıştırıldığında replay geçmişi silinmez.
+
+## Replay frontend (Aşama 5B)
+
+Başarısız event detayından güvenli replay formu açılır. Form yalnızca aynı projedeki production olmayan ve `replayEnabled` açık environment'ları gösterir; POST/PUT/PATCH/DELETE için yan etki onayı ister. Authorization, cookie, host, forwarding header'ları ve `[REDACTED]` alanları gönderilmez.
+
+`/replays` replay geçmişini durum ve environment filtreleriyle listeler. `/replays/:replayId` QUEUED/RUNNING durumlarını polling ile izler, terminal durumda veya 30 saniye sonra durur ve sonuç oluştuğunda orijinal event ile JSON body/duration karşılaştırması gösterir.
 
 ## Supabase doğrulama notu
 

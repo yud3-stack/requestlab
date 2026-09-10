@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   BrowserRouter,
@@ -7,9 +7,11 @@ import {
   Route,
   Routes,
   useLocation,
-  useNavigate
+  useNavigate,
+  useParams
 } from "react-router-dom";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useMutation, useQuery } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
 import {
   Activity,
   AlertTriangle,
@@ -30,9 +32,20 @@ import {
   Search,
   Settings,
   X,
-  Zap
+  Zap,
+  CheckCircle2,
+  CircleDot,
+  FileWarning,
+  SlidersHorizontal
 } from "lucide-react";
-import type { EventStats, RequestEventDetail, RequestEventSummary } from "@requestlab/shared";
+import {
+  CreateReplayInputSchema,
+  type EventStats,
+  type ReplayDetail,
+  type ReplayStatus,
+  type RequestEventDetail,
+  type RequestEventSummary
+} from "@requestlab/shared";
 import type { ApiKey, Environment, Project } from "./api";
 import { api, ApiError } from "./api";
 import "./styles.css";
@@ -214,7 +227,16 @@ function Shell({
           />
           <Route
             path="/replays"
-            element={<EmptyPage title="Tekrar Çalıştırmalar" icon={<Play />} />}
+            element={<Replays projectId={projectId} environments={environments.data?.data || []} />}
+          />
+          <Route
+            path="/replays/:replayId"
+            element={
+              <ReplayDetailPage
+                projectId={projectId}
+                environments={environments.data?.data || []}
+              />
+            }
           />
           <Route
             path="/settings"
@@ -357,6 +379,11 @@ function OverviewContent({ stats }: { stats: EventStats }) {
 function Requests({ projectId, environments }: { projectId: string; environments: Environment[] }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const environmentQuery = useQuery({
+    queryKey: ["environments", projectId],
+    queryFn: () => api.environments(projectId)
+  });
+  const availableEnvironments = environmentQuery.data?.data || environments;
   const params = new URLSearchParams(location.search);
   const [search, setSearch] = useState(params.get("search") || "");
   const [debounced, setDebounced] = useState(search);
@@ -431,7 +458,7 @@ function Requests({ projectId, environments }: { projectId: string; environments
           onChange={(e) => update("environmentId", e.target.value)}
         >
           <option value="">Tüm ortamlar</option>
-          {environments.map((env) => (
+          {availableEnvironments.map((env) => (
             <option key={env.id} value={env.id}>
               {env.name}
             </option>
@@ -504,6 +531,8 @@ function Requests({ projectId, environments }: { projectId: string; environments
           loading={detail.isLoading}
           error={detail.error}
           event={detail.data?.data}
+          projectId={projectId}
+          environments={availableEnvironments}
           onClose={() => {
             setSelected("");
             const next = new URLSearchParams(location.search);
@@ -553,14 +582,20 @@ function Drawer({
   event,
   loading,
   error,
-  onClose
+  onClose,
+  projectId,
+  environments
 }: {
   event?: RequestEventDetail;
   loading: boolean;
   error?: unknown;
   onClose: () => void;
+  projectId: string;
+  environments: Environment[];
 }) {
   const [tab, setTab] = useState("summary");
+  const [replayOpen, setReplayOpen] = useState(false);
+  const navigate = useNavigate();
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", key);
@@ -620,9 +655,17 @@ function Drawer({
                 <div className="detail-section">
                   <Meta label="Hata türü" value={event.errorType || "Yok"} />
                   <Meta label="Hata mesajı" value={event.errorMessage || "Yok"} />
-                  <button className="replay-disabled" disabled>
-                    <Play size={15} /> Tekrar çalıştırma yakında
+                  <button
+                    className="replay-button"
+                    disabled={!canReplay(event, environments)}
+                    title={replayAvailability(event, environments)}
+                    onClick={() => setReplayOpen(true)}
+                  >
+                    <Play size={15} /> Test ortamında tekrar çalıştır
                   </button>
+                  {!canReplay(event, environments) && (
+                    <p className="field-help">{replayAvailability(event, environments)}</p>
+                  )}
                 </div>
               )}
               {tab === "request" && (
@@ -655,7 +698,724 @@ function Drawer({
           )
         )}
       </aside>
+      {replayOpen && event && (
+        <ReplayForm
+          projectId={projectId}
+          event={event}
+          environments={environments}
+          onClose={() => setReplayOpen(false)}
+          onCreated={(id) => navigate(`/replays/${id}`)}
+        />
+      )}
     </>
+  );
+}
+
+const blockedReplayHeaders = new Set([
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "set-cookie",
+  "host",
+  "content-length",
+  "connection",
+  "transfer-encoding",
+  "forwarded",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-real-ip"
+]);
+const sideEffectMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const terminalStatuses = new Set<ReplayStatus>(["SUCCEEDED", "FAILED", "UNCERTAIN"]);
+
+function replayEnvironments(environments: Environment[]) {
+  return environments.filter(
+    (environment) => environment.type !== "PRODUCTION" && environment.replayEnabled
+  );
+}
+function canReplay(event: RequestEventDetail, environments: Environment[]) {
+  return event.statusCode >= 400 && replayEnvironments(environments).length > 0;
+}
+function replayAvailability(event: RequestEventDetail, environments: Environment[]) {
+  if (event.statusCode < 400) return "Yalnızca hatalı event'ler tekrar çalıştırılabilir.";
+  if (!replayEnvironments(environments).length)
+    return "Replay açık development, test veya staging ortamı bulunmuyor.";
+  return "";
+}
+type ReplayFormValues = {
+  environmentId: string;
+  query: string;
+  headers: string;
+  body: string;
+  confirm: boolean;
+};
+
+function ReplayForm({
+  projectId,
+  event,
+  environments,
+  onClose,
+  onCreated
+}: {
+  projectId: string;
+  event: RequestEventDetail;
+  environments: Environment[];
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const eligible = replayEnvironments(environments);
+  const defaultEnvironment = eligible[0];
+  const { register, handleSubmit, setValue, watch } = useForm<ReplayFormValues>({
+    defaultValues: {
+      environmentId: defaultEnvironment?.id ?? "",
+      query: jsonText(event.query),
+      headers: jsonText(safeReplayHeaders(event.requestHeaders)),
+      body: jsonText(event.requestBody),
+      confirm: false
+    }
+  });
+  const selected = eligible.find((item) => item.id === watch("environmentId"));
+  const method = event.method.toUpperCase();
+  const mutation = useMutation({
+    mutationFn: (input: Parameters<typeof api.createReplay>[2]) =>
+      api.createReplay(projectId, event.id, input)
+  });
+  const [formError, setFormError] = useState("");
+  const [jsonErrors, setJsonErrors] = useState<Record<string, string>>({});
+  const submit = (values: ReplayFormValues) => {
+    const parsed: Record<string, unknown> = {};
+    const nextErrors: Record<string, string> = {};
+    for (const field of ["query", "headers", "body"] as const) {
+      if (!values[field].trim()) continue;
+      try {
+        parsed[field] = JSON.parse(values[field]);
+      } catch {
+        nextErrors[field] = "Geçerli JSON girin veya alanı boş bırakın.";
+      }
+    }
+    setJsonErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
+    const input = {
+      environmentId: values.environmentId,
+      query: cleanRedacted(parsed.query) as Record<string, unknown> | undefined,
+      headers: cleanHeaders(parsed.headers),
+      body: cleanRedacted(parsed.body),
+      ...(sideEffectMethods.has(method) ? { confirmSideEffects: values.confirm } : {})
+    };
+    const valid = CreateReplayInputSchema.safeParse(input);
+    if (!valid.success) {
+      setFormError("Replay formundaki değerleri kontrol edin.");
+      return;
+    }
+    if (sideEffectMethods.has(method) && !values.confirm) {
+      setFormError("Yan etki onayı gerekli.");
+      return;
+    }
+    setFormError("");
+    mutation.mutate(valid.data, {
+      onSuccess: (result) => onCreated(result.data.id),
+      onError: (error) => setFormError(errorMessage(error))
+    });
+  };
+  return (
+    <>
+      <button className="drawer-backdrop" onClick={onClose} aria-label="Replay formunu kapat" />
+      <aside className="drawer replay-drawer" aria-label="Replay oluştur">
+        <div className="drawer-head">
+          <div>
+            <span className="eyebrow">SAFE REPLAY</span>
+            <h2>Tekrar çalıştır</h2>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Replay formunu kapat">
+            <X />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit(submit)} className="replay-form" noValidate>
+          <div className="replay-summary">
+            <div>
+              <Method method={method} />
+              <code>{event.path}</code>
+            </div>
+            <span>
+              Orijinal: <Status code={event.statusCode} />
+            </span>
+          </div>
+          <label>
+            HTTP method
+            <input value={method} readOnly />
+          </label>
+          <label>
+            Orijinal path
+            <input value={event.path} readOnly />
+          </label>
+          <label>
+            Hedef environment
+            <select {...register("environmentId")} aria-label="Hedef environment">
+              {eligible.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name} ({item.type})
+                </option>
+              ))}
+            </select>
+          </label>
+          {selected && (
+            <div className="readonly-url">
+              <span>Hedef base URL</span>
+              <code>{selected.baseUrl || "Tanımlanmamış"}</code>
+            </div>
+          )}
+          <JsonEditor
+            label="Query parametreleri"
+            value={watch("query")}
+            original={jsonText(event.query)}
+            error={jsonErrors.query}
+            onChange={(value) => setValue("query", value)}
+          />
+          <JsonEditor
+            label="Güvenli header'lar"
+            value={watch("headers")}
+            original={jsonText(safeReplayHeaders(event.requestHeaders))}
+            error={jsonErrors.headers}
+            onChange={(value) => setValue("headers", value)}
+            note="Authorization, cookie, host ve forwarding header'ları gösterilmez veya backend tarafından gönderilmez."
+          />
+          <JsonEditor
+            label="Request body"
+            value={watch("body")}
+            original={jsonText(event.requestBody)}
+            error={jsonErrors.body}
+            onChange={(value) => setValue("body", value)}
+            note="[REDACTED] alanlar gerçek değer değildir ve gönderilmez."
+          />
+          {sideEffectMethods.has(method) && (
+            <label className="confirm-row">
+              <input type="checkbox" {...register("confirm")} /> Bu isteğin test ortamındaki
+              verileri değiştirebileceğini anlıyorum.
+            </label>
+          )}
+          {formError && (
+            <div className="form-error" role="alert">
+              {formError}
+            </div>
+          )}
+          <div className="form-actions">
+            <button type="button" className="ghost-button" onClick={onClose}>
+              Vazgeç
+            </button>
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={mutation.isPending || !selected}
+            >
+              {mutation.isPending ? (
+                <>
+                  <RefreshCw className="spin" size={15} /> Kuyruğa ekleniyor...
+                </>
+              ) : (
+                <>
+                  <Play size={15} /> Replay başlat
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </aside>
+    </>
+  );
+}
+
+function JsonEditor({
+  label,
+  value,
+  original,
+  error,
+  onChange,
+  note
+}: {
+  label: string;
+  value: string;
+  original: string;
+  error?: string;
+  onChange: (value: string) => void;
+  note?: string;
+}) {
+  return (
+    <div className="json-editor">
+      <div className="editor-head">
+        <label htmlFor={`json-${label}`}>{label}</label>
+        <div>
+          <button type="button" onClick={() => onChange(formatJson(value))}>
+            Format JSON
+          </button>
+          <button type="button" onClick={() => onChange(original)}>
+            Orijinale dön
+          </button>
+          <button type="button" onClick={() => navigator.clipboard?.writeText(value)}>
+            Kopyala
+          </button>
+        </div>
+      </div>
+      <textarea
+        id={`json-${label}`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `error-${label}` : undefined}
+        spellCheck={false}
+      />
+      {note && <small className="field-help">{note}</small>}
+      {error && (
+        <small className="form-error" id={`error-${label}`}>
+          {error}
+        </small>
+      )}
+    </div>
+  );
+}
+
+function Replays({ projectId, environments }: { projectId: string; environments: Environment[] }) {
+  const [status, setStatus] = useState("");
+  const [environmentId, setEnvironmentId] = useState("");
+  const [page, setPage] = useState(1);
+  const result = useQuery({
+    queryKey: ["replays", projectId, status, environmentId, page],
+    queryFn: () =>
+      api.replays(projectId, {
+        status: status || undefined,
+        environmentId: environmentId || undefined,
+        page,
+        pageSize: 20
+      }),
+    refetchInterval: 15_000
+  });
+  return (
+    <Page title="Tekrar Çalıştırmalar" subtitle="Güvenli replay görevlerini ve sonuçlarını izleyin">
+      <div className="request-toolbar replay-filters">
+        <select
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value);
+            setPage(1);
+          }}
+          aria-label="Replay durumu"
+        >
+          <option value="">Tüm durumlar</option>
+          {["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "UNCERTAIN"].map((item) => (
+            <option key={item} value={item}>
+              {statusLabel(item as ReplayStatus)}
+            </option>
+          ))}
+        </select>
+        <select
+          value={environmentId}
+          onChange={(event) => {
+            setEnvironmentId(event.target.value);
+            setPage(1);
+          }}
+          aria-label="Replay environment"
+        >
+          <option value="">Tüm ortamlar</option>
+          {environments
+            .filter((item) => item.type !== "PRODUCTION")
+            .map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+        </select>
+        <button className="ghost-button" onClick={() => result.refetch()}>
+          <RefreshCw size={15} className={result.isFetching ? "spin" : ""} /> Yenile
+        </button>
+      </div>
+      {result.isLoading ? (
+        <SkeletonTable />
+      ) : result.isError ? (
+        <ErrorState error={result.error} />
+      ) : result.data?.data.length ? (
+        <>
+          <div className="replay-list">
+            {result.data.data.map((replay) => (
+              <Link className="replay-card" to={`/replays/${replay.id}`} key={replay.id}>
+                <div>
+                  <Method method={replay.method} />
+                  <code>{replay.targetUrl}</code>
+                </div>
+                <StatusBadge status={replay.status} />
+                <span>{replay.statusCode ?? "—"}</span>
+                <span>{replay.durationMs == null ? "—" : `${replay.durationMs} ms`}</span>
+                <time>{formatDate(replay.createdAt)}</time>
+              </Link>
+            ))}
+          </div>
+          <Pagination
+            page={page}
+            totalPages={result.data.pagination.totalPages}
+            total={result.data.pagination.total}
+            onPage={setPage}
+          />
+        </>
+      ) : (
+        <EmptyState
+          title="Henüz replay bulunmuyor"
+          description="Bir event detayından güvenli replay başlatabilirsiniz."
+        />
+      )}
+    </Page>
+  );
+}
+
+function ReplayDetailPage({
+  projectId,
+  environments
+}: {
+  projectId: string;
+  environments: Environment[];
+}) {
+  const { replayId = "" } = useParams();
+  const [manualRefresh, setManualRefresh] = useState(0);
+  const [timedOut, setTimedOut] = useState(false);
+  const timeout = useRef<number | undefined>(undefined);
+  const replay = useQuery({
+    queryKey: ["replay", projectId, replayId, manualRefresh],
+    queryFn: ({ signal }) => api.replay(projectId, replayId, signal),
+    enabled: Boolean(replayId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.data.status;
+      return timedOut || (status && terminalStatuses.has(status)) ? false : 1000;
+    }
+  });
+  const original = useQuery({
+    queryKey: ["event", projectId, replay.data?.data.originalEventId],
+    queryFn: () => api.event(projectId, replay.data!.data.originalEventId),
+    enabled: Boolean(replay.data?.data.originalEventId)
+  });
+  useEffect(() => {
+    timeout.current = window.setTimeout(() => setTimedOut(true), 30_000);
+    return () => {
+      if (timeout.current) window.clearTimeout(timeout.current);
+    };
+  }, []);
+  if (replay.isLoading)
+    return (
+      <Page title="Replay detayı" subtitle="Durum yükleniyor...">
+        <SkeletonTable />
+      </Page>
+    );
+  if (replay.isError || !replay.data)
+    return (
+      <Page title="Replay detayı" subtitle="Replay sonucu">
+        <ErrorState error={replay.error} />
+      </Page>
+    );
+  const item = replay.data.data;
+  const env = environments.find((entry) => entry.id === item.environmentId);
+  const event = original.data?.data;
+  return (
+    <Page
+      title="Replay detayı"
+      subtitle={env ? `${env.name} ortamında güvenli tekrar çalıştırma` : "Replay sonucu"}
+    >
+      <Link className="back-link" to="/replays">
+        <ChevronLeft size={15} /> Tüm replay'ler
+      </Link>
+      <section className="panel replay-status-panel">
+        <div>
+          <span className="eyebrow">REPLAY STATUS</span>
+          <h2>
+            <StatusBadge status={item.status} />
+          </h2>
+        </div>
+        <button
+          className="ghost-button"
+          onClick={() => {
+            setTimedOut(false);
+            setManualRefresh((value) => value + 1);
+          }}
+        >
+          <RefreshCw size={15} /> Yenile
+        </button>
+        <p aria-live="polite">
+          {timedOut && !terminalStatuses.has(item.status)
+            ? "Durum henüz kesinleşmedi. Manuel yenileme ile tekrar kontrol edin."
+            : item.status === "QUEUED"
+              ? "Replay kuyruğa alındı."
+              : item.status === "RUNNING"
+                ? "Replay çalışıyor..."
+                : item.status === "UNCERTAIN"
+                  ? "Durum henüz kesinleşmedi."
+                  : item.errorMessage || "Replay tamamlandı."}
+        </p>
+      </section>
+      {event && <Comparison original={event} replay={item} environment={env} />}
+    </Page>
+  );
+}
+
+function Comparison({
+  original,
+  replay,
+  environment
+}: {
+  original: RequestEventDetail;
+  replay: ReplayDetail;
+  environment?: Environment;
+}) {
+  const [onlyChanges, setOnlyChanges] = useState(false);
+  const requestDiff = diffJson(original.requestBody, replay.requestBody);
+  const responseDiff = diffJson(original.responseBody, replay.responseBody);
+  return (
+    <div className="comparison">
+      <div className="comparison-head">
+        <div>
+          <span className="eyebrow">RESULT COMPARISON</span>
+          <h2>Orijinal ve replay sonucu</h2>
+        </div>
+        <label className="refresh-toggle">
+          <input
+            type="checkbox"
+            checked={onlyChanges}
+            onChange={(event) => setOnlyChanges(event.target.checked)}
+          />{" "}
+          Sadece değişiklikleri göster
+        </label>
+      </div>
+      <div className="result-columns">
+        <ResultColumn
+          title="Orijinal İstek"
+          code={original.statusCode}
+          duration={original.durationMs}
+          body={original.requestBody}
+          response={original.responseBody}
+          date={original.occurredAt}
+        />
+        <ResultColumn
+          title="Tekrar Çalıştırma"
+          code={replay.statusCode}
+          duration={replay.durationMs}
+          body={replay.requestBody}
+          response={replay.responseBody}
+          date={replay.finishedAt}
+        />
+      </div>
+      <div className="comparison-meta">
+        <Meta label="Environment" value={environment?.name || replay.environmentId} />
+        <Meta label="Süre farkı" value={durationDelta(original.durationMs, replay.durationMs)} />
+        <Meta label="Oluşma" value={formatDate(original.occurredAt)} />
+        <Meta label="Başlama" value={replay.startedAt ? formatDate(replay.startedAt) : "—"} />
+        <Meta label="Bitirme" value={replay.finishedAt ? formatDate(replay.finishedAt) : "—"} />
+      </div>
+      <section className="panel diff-panel">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">JSON DIFF</span>
+            <h2>Request body farkı</h2>
+          </div>
+          <SlidersHorizontal />
+        </div>
+        <DiffList entries={requestDiff} onlyChanges={onlyChanges} />
+        <h3>Response body farkı</h3>
+        <DiffList entries={responseDiff} onlyChanges={onlyChanges} />
+      </section>
+    </div>
+  );
+}
+function ResultColumn({
+  title,
+  code,
+  duration,
+  body,
+  response,
+  date
+}: {
+  title: string;
+  code: number | null;
+  duration: number | null;
+  body: unknown;
+  response: unknown;
+  date: string | null;
+}) {
+  return (
+    <article className="result-column">
+      <div className="result-title">
+        <h3>{title}</h3>
+        <Status code={code ?? 0} />
+      </div>
+      <strong>{code ? statusText(code) : "Sonuç bekleniyor"}</strong>
+      <span>{duration == null ? "—" : `${duration} ms`}</span>
+      <time>{date ? formatDate(date) : "—"}</time>
+      <JsonBlock label="Request body" value={body} />
+      <JsonBlock label="Response body" value={response} />
+    </article>
+  );
+}
+type DiffEntry = {
+  path: string;
+  kind: "added" | "removed" | "changed" | "same";
+  original: unknown;
+  replay: unknown;
+};
+export function diffJson(
+  original: unknown,
+  replay: unknown,
+  path = "$",
+  entries: DiffEntry[] = []
+) {
+  if (Object.is(original, replay)) {
+    entries.push({ path, kind: "same", original, replay });
+    return entries;
+  }
+  if (isRecord(original) && isRecord(replay)) {
+    const keys = new Set([...Object.keys(original), ...Object.keys(replay)]);
+    for (const key of keys) diffJson(original[key], replay[key], `${path}.${key}`, entries);
+    return entries;
+  }
+  if (original === undefined) entries.push({ path, kind: "added", original, replay });
+  else if (replay === undefined) entries.push({ path, kind: "removed", original, replay });
+  else entries.push({ path, kind: "changed", original, replay });
+  return entries;
+}
+function DiffList({ entries, onlyChanges }: { entries: DiffEntry[]; onlyChanges: boolean }) {
+  const visible = onlyChanges ? entries.filter((entry) => entry.kind !== "same") : entries;
+  return (
+    <div className="diff-list">
+      {visible.length ? (
+        visible.map((entry) => (
+          <div className={`diff-row ${entry.kind}`} key={entry.path}>
+            <b>
+              {entry.kind === "added"
+                ? "+"
+                : entry.kind === "removed"
+                  ? "−"
+                  : entry.kind === "changed"
+                    ? "~"
+                    : "="}
+            </b>
+            <code>{entry.path}</code>
+            <span>
+              {entry.kind === "removed"
+                ? jsonText(entry.original)
+                : entry.kind === "added"
+                  ? jsonText(entry.replay)
+                  : `${jsonText(entry.original)} → ${jsonText(entry.replay)}`}
+            </span>
+          </div>
+        ))
+      ) : (
+        <span className="field-help">Değişiklik yok.</span>
+      )}
+    </div>
+  );
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+export function durationDelta(original: number | null, replay: number | null) {
+  if (original == null || replay == null) return "—";
+  const delta = replay - original;
+  const percentage = original ? Math.round((delta / original) * 100) : 0;
+  return `${delta >= 0 ? "+" : ""}${delta} ms (${percentage >= 0 ? "+" : ""}${percentage}%)`;
+}
+function statusText(code: number) {
+  return code >= 500
+    ? "Internal Server Error"
+    : code === 201
+      ? "Created"
+      : code >= 400
+        ? "Error"
+        : "OK";
+}
+function StatusBadge({ status }: { status: ReplayStatus }) {
+  const Icon =
+    status === "SUCCEEDED"
+      ? CheckCircle2
+      : status === "FAILED"
+        ? AlertTriangle
+        : status === "UNCERTAIN"
+          ? FileWarning
+          : CircleDot;
+  return (
+    <span className={`replay-status ${status.toLowerCase()}`}>
+      <Icon size={15} /> {statusLabel(status)}
+    </span>
+  );
+}
+function statusLabel(status: ReplayStatus) {
+  return {
+    QUEUED: "Kuyrukta",
+    RUNNING: "Çalışıyor",
+    SUCCEEDED: "Tamamlandı",
+    FAILED: "Başarısız",
+    UNCERTAIN: "Belirsiz"
+  }[status];
+}
+function Pagination({
+  page,
+  totalPages,
+  total,
+  onPage
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="pagination">
+      <span>{total} sonuç</span>
+      <div>
+        <button className="icon-button" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+          <ChevronLeft />
+        </button>
+        <b>
+          {page} / {Math.max(totalPages, 1)}
+        </b>
+        <button
+          className="icon-button"
+          disabled={page >= totalPages}
+          onClick={() => onPage(page + 1)}
+        >
+          <ChevronRight />
+        </button>
+      </div>
+    </div>
+  );
+}
+function jsonText(value: unknown) {
+  return value == null ? "" : JSON.stringify(value, null, 2);
+}
+function formatJson(value: string) {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+function safeReplayHeaders(value: unknown) {
+  if (!isRecord(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      ([key, item]) => !blockedReplayHeaders.has(key.toLowerCase()) && item !== "[REDACTED]"
+    )
+  );
+}
+function cleanRedacted(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(cleanRedacted);
+  if (isRecord(value))
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== "[REDACTED]")
+        .map(([key, item]) => [key, cleanRedacted(item)])
+    );
+  return value;
+}
+function cleanHeaders(value: unknown) {
+  return Object.fromEntries(
+    Object.entries(isRecord(value) ? value : {}).filter(
+      ([key, item]) =>
+        !blockedReplayHeaders.has(key.toLowerCase()) &&
+        typeof item === "string" &&
+        item !== "[REDACTED]"
+    )
   );
 }
 function JsonSections({ values }: { values: Array<[string, unknown]> }) {
@@ -770,17 +1530,6 @@ function SettingsPage({
           )}
         </div>
       </section>
-    </Page>
-  );
-}
-function EmptyPage({ title, icon }: { title: string; icon: React.ReactNode }) {
-  return (
-    <Page title={title} subtitle="Güvenli ve kontrollü çalışma alanı">
-      <div className="empty-feature">
-        <div className="feature-icon">{icon}</div>
-        <h2>Henüz tekrar çalıştırma bulunmuyor</h2>
-        <p>Event'leri inceleyin; tekrar çalıştırma akışı yakında kullanıma sunulacak.</p>
-      </div>
     </Page>
   );
 }

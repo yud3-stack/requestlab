@@ -43,7 +43,7 @@ RequestLab, gerçek uygulamalardaki API hatalarını kaydetmek, incelemek ve tes
 - Failed event, aynı project environment, production/replayEnabled kontrolleri, yan etkili method confirmation ve audit kaydı uygulanır.
 - BullMQ API queue adapter'ı ve ayrı Redis bağlantılı worker eklendi. Redis yoksa API replay endpoint'i `REPLAY_UNAVAILABLE`, worker ise secret içermeyen startup hatası verir.
 - Worker DNS/IP hedef doğrulaması, redirect kapatma, timeout, response byte limiti, güvenli header allow-listesi, idempotency key ve response masking uygular.
-- Replay frontend ekranı ve JSON karşılaştırma bu aşamada özellikle değiştirilmedi; Aşama 5B başlangıç noktasıdır.
+- Replay frontend ekranı ve JSON karşılaştırma Aşama 5B'de tamamlandı.
 
 ## Veritabanı modelleri
 
@@ -109,7 +109,7 @@ Seed sonrası demo kullanıcının ID'si çıktıdan alınarak `DEV_USER_ID` vey
 - `apps/web/src/api.ts`: merkezi frontend API istemcisi
 - `apps/web/src/main.tsx`: dashboard route'ları ve bileşenleri
 - `apps/web/src/styles.css`: responsive dashboard görsel sistemi
-- `apps/web/tests/dashboard.test.tsx`: frontend loading, error, empty, drawer, masking ve mobil menü testleri
+- `apps/web/tests/dashboard.test.tsx`: frontend loading, error, empty, drawer, masking, mobil menü ve replay regression testleri
 - `apps/web/tests/api-client.test.ts`: development user header testleri
 - `apps/api/src/modules/replays/routes.ts`: replay API ve yetki/güvenlik kontrolleri
 - `apps/api/src/lib/replay-queue.ts`: API BullMQ queue adapter'ı
@@ -163,11 +163,11 @@ GitHub Actions migration workflow'u manuel `workflow_dispatch` ile başarıyla k
 - Gerçek PostgreSQL integration test suite'i yoktur; route testleri `app.inject` ve mock DB ile çalışır.
 - API key hash'i genel amaçlı SHA-256'dır; düşük hacimli ingestion anahtarı doğrulaması için kullanılmıştır.
 - Redis ve replay backend'i Aşama 5A'da eklendi; gerçek Upstash + Supabase replay smoke testi başarıyla çalıştırıldı. Migration applied, seed idempotence, development target, gerçek `500` event, BullMQ worker, replay `SUCCEEDED`/`201`, duration/finishedAt, audit, header filtering, response masking ve tek job doğrulandı.
-- Replay frontend ve JSON karşılaştırma ekranı Aşama 5B kapsamındadır.
+- Replay frontend; güvenli form, environment filtering, redacted/dangerous header temizleme, sonuç polling'i, replay listesi/detayı ve JSON comparison görünümüyle Aşama 5B'de tamamlandı.
 
-## Aşama 5B için başlangıç noktası
+## Aşama 5B sonucu
 
-Replay API, `ReplayRun` durumları ve worker sözleşmesi korunarak frontend replay ekranı, JSON karşılaştırma görünümü ve sonuç polling'i ele alınabilir. Gerçek kullanıcı login'i ve production deployment bu aşamanın dışındadır.
+Replay API, `ReplayRun` durumları ve worker sözleşmesi korunarak frontend akışı tamamlandı. Gerçek kullanıcı login'i, production deployment ve browser otomasyonlu görsel doğrulama bu aşamanın dışındadır.
 
 ## Aşama 4 için başlangıç noktası
 

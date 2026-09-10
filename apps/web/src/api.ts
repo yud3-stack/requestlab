@@ -1,4 +1,12 @@
-import type { EventStats, RequestEventDetail, RequestEventSummary } from "@requestlab/shared";
+import type {
+  CreateReplayInput,
+  EventStats,
+  ReplayDetail,
+  ReplayPage,
+  ReplaySummary,
+  RequestEventDetail,
+  RequestEventSummary
+} from "@requestlab/shared";
 
 export type Project = {
   id: string;
@@ -60,14 +68,15 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
+async function request<T>(path: string, signal?: AbortSignal, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 8000);
   const abort = () => controller.abort();
   signal?.addEventListener("abort", abort, { once: true });
   try {
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
-      headers: getRequestHeaders(),
+      ...init,
+      headers: { ...(init.headers ?? {}), ...(getRequestHeaders() ?? {}) },
       signal: controller.signal
     });
     const text = await response.text();
@@ -128,5 +137,22 @@ export const api = {
     ),
   event: (projectId: string, eventId: string, signal?: AbortSignal) =>
     request<{ data: RequestEventDetail }>(`/api/projects/${projectId}/events/${eventId}`, signal),
+  createReplay: (projectId: string, eventId: string, input: CreateReplayInput) =>
+    request<{ data: ReplaySummary }>(
+      `/api/projects/${projectId}/events/${eventId}/replays`,
+      undefined,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input)
+      }
+    ),
+  replays: (
+    projectId: string,
+    params: Record<string, string | number | undefined>,
+    signal?: AbortSignal
+  ) => request<ReplayPage>(`/api/projects/${projectId}/replays?${queryString(params)}`, signal),
+  replay: (projectId: string, replayId: string, signal?: AbortSignal) =>
+    request<{ data: ReplayDetail }>(`/api/projects/${projectId}/replays/${replayId}`, signal),
   health: (signal?: AbortSignal) => request<{ status: string; service: string }>("/health", signal)
 };
