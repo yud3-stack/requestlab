@@ -259,6 +259,21 @@ describe("production public demo boundaries", () => {
     await app.close();
   });
 
+  it("marks the public demo unavailable when its required configuration is missing", async () => {
+    const cases = [
+      { db: dbMock(), config: { ...config, demoSessionSecret: undefined } },
+      { db: dbMock({ project: { findUnique: async () => null } }), config },
+      { db: dbMock({ projectMember: { findFirst: async () => null } }), config }
+    ];
+    for (const options of cases) {
+      const app = createApp(options);
+      const response = await app.inject({ method: "POST", url: "/api/demo/session" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe("DEMO_UNAVAILABLE");
+      await app.close();
+    }
+  });
+
   it("rejects expired and malformed demo tokens and unknown scenarios", async () => {
     const app = createApp({
       db: dbMock(),
