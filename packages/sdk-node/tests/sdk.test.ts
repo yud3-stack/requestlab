@@ -81,6 +81,66 @@ describe("RequestLab SDK", () => {
     expect(warn.mock.calls.flat().join(" ")).not.toContain(apiKey);
   });
 
+  it("ignores exact paths without query strings and keeps default capture behavior", async () => {
+    const fetchMock = vi.fn(async () => new Response("", { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new RequestLabClient({
+      apiUrl: "http://requestlab.test",
+      apiKey: "rlk_test",
+      environment: "test",
+      captureMode: "all",
+      ignorePaths: ["/health"]
+    });
+
+    expect(client.capture({ method: "GET", path: "/health", statusCode: 200, durationMs: 1 })).toBe(
+      false
+    );
+    expect(
+      client.capture({
+        method: "GET",
+        path: "/health?source=render",
+        statusCode: 200,
+        durationMs: 1
+      })
+    ).toBe(false);
+    expect(
+      client.capture({ method: "GET", path: "/health-check", statusCode: 200, durationMs: 1 })
+    ).toBe(true);
+    await client.flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const defaultClient = new RequestLabClient({
+      apiUrl: "http://requestlab.test",
+      apiKey: "rlk_test",
+      environment: "test",
+      captureMode: "all"
+    });
+    defaultClient.capture({ method: "GET", path: "/health", statusCode: 200, durationMs: 1 });
+    await defaultClient.flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("supports excludePaths as an alias", async () => {
+    const fetchMock = vi.fn(async () => new Response("", { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new RequestLabClient({
+      apiUrl: "http://requestlab.test",
+      apiKey: "rlk_test",
+      environment: "test",
+      captureMode: "all",
+      excludePaths: ["/health"]
+    });
+
+    client.capture({
+      method: "GET",
+      path: "/health?source=render",
+      statusCode: 200,
+      durationMs: 1
+    });
+    await client.flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("fails open when the API is unreachable and preserves request ids", async () => {
     const fetchMock = vi.fn(async () => {
       throw new Error("network unavailable");

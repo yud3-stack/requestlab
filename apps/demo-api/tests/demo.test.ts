@@ -94,7 +94,8 @@ describe("demo API scenarios", () => {
         apiUrl: "http://requestlab.test",
         apiKey: "rlk_demo",
         environment: "development",
-        captureMode: "all"
+        captureMode: "all",
+        ignorePaths: ["/health"]
       }
     });
     await app.ready();
@@ -104,6 +105,11 @@ describe("demo API scenarios", () => {
       url: "/api/products",
       headers: { "x-request-id": "demo-request-id" }
     });
+    expect((await app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/health?source=render" })).statusCode).toBe(
+      200
+    );
+    expect((await app.inject({ method: "GET", url: "/health-check" })).statusCode).toBe(404);
     await app.inject({
       method: "POST",
       url: "/api/orders",
@@ -119,6 +125,8 @@ describe("demo API scenarios", () => {
     expect(sent.some((event) => event.path === "/api/products" && event.statusCode === 200)).toBe(
       true
     );
+    expect(sent.some((event) => event.path === "/health")).toBe(false);
+    expect(sent.some((event) => event.path === "/health-check")).toBe(true);
     const failedOrder = sent.find((event) => event.path === "/api/orders");
     expect(failedOrder?.statusCode).toBe(500);
     expect(

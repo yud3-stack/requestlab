@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolveOptions, type ResolvedRequestLabOptions } from "./config.js";
 import { EventQueue } from "./queue.js";
+import { isIgnoredPath } from "./paths.js";
 import { prepareValue } from "./serialization.js";
 import type {
   CapturedRequest,
@@ -23,6 +24,7 @@ export class RequestLabClient {
   }
 
   capture(request: CapturedRequest): boolean {
+    if (isIgnoredPath(request.path, this.options.ignorePaths)) return false;
     const event: RequestLabEvent = {
       externalEventId: `evt_${randomUUID()}`,
       environment: this.options.environment,

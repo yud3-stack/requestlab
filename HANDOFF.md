@@ -22,6 +22,7 @@ RequestLab, gerçek uygulamalardaki API hatalarını kaydetmek, incelemek ve tes
 - Fastify `onRequest`/`onResponse` hook entegrasyonu, request ID koruma/üretme ve flush desteği eklendi.
 - `apps/demo-api` ürün, sipariş, login, slow request ve scenario endpointleriyle oluşturuldu.
 - Demo API SDK yapılandırması olmadan da çalışır; yapılandırıldığında başarılı, hatalı ve yavaş istekleri event olarak yakalar.
+- Node SDK `ignorePaths` ve `excludePaths` seçenekleriyle query string'i yok sayan exact path filtrelemesi destekler. Demo API, `REQUESTLAB_CAPTURE_MODE=all` korunarak Render'ın `/health` çağrılarını capture dışı bırakır; `/health-check`, ürünler, hata ve slow-request senaryoları capture edilmeye devam eder.
 - Demo API için idempotency, deterministic hata senaryoları ve SDK integration testleri eklendi.
 
 ## Aşama 4'te tamamlananlar

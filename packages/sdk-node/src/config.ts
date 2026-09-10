@@ -1,14 +1,28 @@
+import { normalizeIgnoredPaths } from "./paths.js";
 import type { RequestLabOptions } from "./types.js";
 
 export type ResolvedRequestLabOptions = Required<
   Pick<
     RequestLabOptions,
-    "captureMode" | "timeoutMs" | "maxBodyBytes" | "maxQueueSize" | "captureStackTrace" | "debug"
+    | "captureMode"
+    | "ignorePaths"
+    | "timeoutMs"
+    | "maxBodyBytes"
+    | "maxQueueSize"
+    | "captureStackTrace"
+    | "debug"
   >
 > &
   Omit<
     RequestLabOptions,
-    "captureMode" | "timeoutMs" | "maxBodyBytes" | "maxQueueSize" | "captureStackTrace" | "debug"
+    | "captureMode"
+    | "ignorePaths"
+    | "excludePaths"
+    | "timeoutMs"
+    | "maxBodyBytes"
+    | "maxQueueSize"
+    | "captureStackTrace"
+    | "debug"
   >;
 
 export function resolveOptions(options: RequestLabOptions): ResolvedRequestLabOptions {
@@ -25,6 +39,7 @@ export function resolveOptions(options: RequestLabOptions): ResolvedRequestLabOp
     ...options,
     apiUrl: options.apiUrl.replace(/\/$/, ""),
     captureMode: options.captureMode ?? "errors",
+    ignorePaths: normalizeIgnoredPaths(options.ignorePaths, options.excludePaths),
     timeoutMs: options.timeoutMs ?? 1000,
     maxBodyBytes: options.maxBodyBytes ?? 128 * 1024,
     maxQueueSize: options.maxQueueSize ?? 100,

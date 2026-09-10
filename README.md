@@ -154,7 +154,7 @@ pnpm --filter @requestlab/web dev
 pnpm exec node scripts/real-smoke.mjs
 ```
 
-Senaryo endpointleri `GET /api/products`, `POST /api/orders`, `POST /api/login`, `GET /api/slow` ve `GET /api/scenarios` yollarıdır. SDK varsayılan olarak yalnızca hata eventlerini yakalar; demo için `REQUESTLAB_CAPTURE_MODE=all` kullanılabilir.
+Senaryo endpointleri `GET /api/products`, `POST /api/orders`, `POST /api/login`, `GET /api/slow` ve `GET /api/scenarios` yollarıdır. SDK varsayılan olarak yalnızca hata eventlerini yakalar; demo için `REQUESTLAB_CAPTURE_MODE=all` kullanılabilir. Fastify entegrasyonunda `ignorePaths` veya eşdeğer `excludePaths` ile tam path'ler event capture dışı bırakılabilir; karşılaştırma query string'i dikkate almaz. Demo API, Render health-check çağrılarının event kirliliği oluşturmaması için `/health` yolunu hariç tutar. `/health-check` gibi farklı yollar hariç tutulmaz.
 
 Prisma migration komutları `packages/database/prisma.config.ts` üzerinden `DIRECT_URL` kullanır; migration için Transaction Pooler (`DATABASE_URL`, 6543) kullanılmaz.
 

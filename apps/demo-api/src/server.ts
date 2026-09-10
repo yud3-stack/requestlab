@@ -21,7 +21,7 @@ export async function main(): Promise<void> {
     app = createDemoApp(
       apiUrl && apiKey
         ? {
-            requestLab: { apiUrl, apiKey, environment, captureMode },
+            requestLab: { apiUrl, apiKey, environment, captureMode, ignorePaths: ["/health"] },
             nodeEnv: process.env.NODE_ENV,
             triggerSecret: process.env.DEMO_TRIGGER_SECRET,
             corsAllowedOrigins

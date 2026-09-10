@@ -6,6 +6,8 @@ export type RequestLabOptions = {
   environment: string;
   serviceName?: string;
   captureMode?: "errors" | "all";
+  ignorePaths?: string[];
+  excludePaths?: string[];
   timeoutMs?: number;
   maxBodyBytes?: number;
   maxQueueSize?: number;
