@@ -150,8 +150,9 @@ Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL`
 - `git diff --check`: başarılı.
 - CORS regression testleri: izinli preflight, doğru origin, user header allow-list, CORS'lu 401 ve izin­siz origin doğrulandı.
 - Aşama 5A replay testleri: 39 test başarılı; rol/proje/environment/production/confirmation, queue failure, target IP, redirect, header filtering, timeout, response limit, masking ve state transition doğrulandı.
+- `scripts/replay-smoke.mjs`: gerçek Upstash Redis + Supabase + demo API replay smoke testi başarılı; tüm başlatılan PID'ler kapatıldı ve smoke portları temiz doğrulandı.
 
-Docker CLI bu ortamda bulunmadı; gerekli migration GitHub Actions üzerinden çalıştırıldı. Migration geçmişi değiştirilmedi, yeni migration üretilmedi ve 6543 Transaction Pooler üzerinden migration çalıştırılmadı. Gerçek Supabase veritabanı round-trip doğrulaması tamamlandı. Event ID, API key ve bağlantı değerleri loglanmadı veya dokümana yazılmadı.
+Docker CLI bu ortamda bulunmadı; replay migration'ı güvenli GitHub Actions workflow'u üzerinden Supabase'e uygulandı. Migration geçmişi değiştirilmedi ve yeni migration üretimi yapılmadı. Gerçek Supabase veritabanı round-trip ve replay smoke doğrulaması tamamlandı. Event ID, API key ve bağlantı değerleri loglanmadı veya dokümana yazılmadı.
 
 GitHub Actions migration workflow'u manuel `workflow_dispatch` ile başarıyla kullanıldı. Workflow validation, client generation ve mevcut migration deploy adımlarını içerir; seed, reset ve migration generation içermez.
 
@@ -161,7 +162,7 @@ GitHub Actions migration workflow'u manuel `workflow_dispatch` ile başarıyla k
 - CORS için production origin listesi deployment ortamında `CORS_ALLOWED_ORIGINS` ile açıkça sağlanmalıdır.
 - Gerçek PostgreSQL integration test suite'i yoktur; route testleri `app.inject` ve mock DB ile çalışır.
 - API key hash'i genel amaçlı SHA-256'dır; düşük hacimli ingestion anahtarı doğrulaması için kullanılmıştır.
-- Redis ve replay backend'i Aşama 5A'da eklendi; gerçek Upstash replay smoke testi bu ortamda `REDIS_URL`/migration erişimi olmadığı için çalıştırılamadı.
+- Redis ve replay backend'i Aşama 5A'da eklendi; gerçek Upstash + Supabase replay smoke testi başarıyla çalıştırıldı. Migration applied, seed idempotence, development target, gerçek `500` event, BullMQ worker, replay `SUCCEEDED`/`201`, duration/finishedAt, audit, header filtering, response masking ve tek job doğrulandı.
 - Replay frontend ve JSON karşılaştırma ekranı Aşama 5B kapsamındadır.
 
 ## Aşama 5B için başlangıç noktası

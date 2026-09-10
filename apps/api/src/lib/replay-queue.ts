@@ -32,3 +32,15 @@ export function createReplayQueue(redisUrl: string | undefined): ReplayQueue | u
     }
   };
 }
+
+export async function countReplayJobs(redisUrl: string, replayId: string): Promise<number> {
+  const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
+  const queue = new Queue<ReplayJob>("requestlab-replays", { connection });
+  try {
+    const jobs = await queue.getJobs(["waiting", "active", "completed", "failed"]);
+    return jobs.filter((job) => job.id === replayId).length;
+  } finally {
+    await queue.close();
+    await connection.quit();
+  }
+}
