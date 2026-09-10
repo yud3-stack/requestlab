@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "framework": "vite",
   "installCommand": "corepack pnpm install --frozen-lockfile",
   "buildCommand": "corepack pnpm --filter @requestlab/web... build",
   "outputDirectory": "apps/web/dist",
