@@ -59,7 +59,7 @@ try {
       );
     else execFileSync("corepack", ["pnpm", ...args], { cwd: root, stdio: "ignore" });
   };
-  run(["--filter", "@requestlab/web", "build"]);
+  run(["--filter", "@requestlab/web...", "build"]);
   run(["--filter", "@requestlab/api...", "build"]);
   run(["--filter", "@requestlab/demo-api...", "build"]);
 } catch {
