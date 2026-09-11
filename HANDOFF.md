@@ -27,6 +27,8 @@ RequestLab, gerçek uygulamalardaki API hatalarını kaydetmek, incelemek ve tes
 - Node SDK `includePaths` ve `capturePaths` seçenekleriyle opsiyonel exact allowlist desteği sağlar; verilmediğinde mevcut capture davranışı korunur. Demo API allowlist'i `/api/products`, `/api/orders`, `/api/orders/order-1`, `/api/auth/login` ve `/api/demo/slow` ile sınırlıdır; scanner ve bilinmeyen 404 path'leri capture edilmez.
 - `pnpm demo:cleanup-scanner` varsayılan olarak dry-run'dır; yalnızca `--apply` ile tek `DEMO_PROJECT_SLUG` projesindeki `GET`/`404` scanner biçimli `.env` path segmentleri ve ilişkili replay kayıtları transaction içinde temizlenir. `.environment`, normal 404'ler, farklı method/status kayıtları ve diğer projeler korunur.
 - Demo API için idempotency, deterministic hata senaryoları ve SDK integration testleri eklendi.
+- Demo API SDK timeout'u `REQUESTLAB_TIMEOUT_MS` ile environment kontrollü hale getirildi; `1..30000` ms dışındaki veya geçersiz değerler `1000` ms güvenli varsayılanına düşer. Render production demo servisi `30000` ms kullanır; genel SDK varsayılanı değiştirilmedi.
+- Event ingestion fail-open korunarak yavaş veya erişilemeyen RequestLab API'nin başarılı demo login/order response'larını bozmadığı test edildi. Başarılı login response token'ı ingestion payload'ında `[REDACTED]` olur.
 
 ## Aşama 4'te tamamlananlar
 
@@ -109,6 +111,7 @@ Seed sonrası demo kullanıcının ID'si çıktıdan alınarak `DEV_USER_ID` vey
 - `packages/sdk-node/src/fastify.ts`: Fastify hook entegrasyonu
 - `packages/sdk-node/src/queue.ts`: bounded fail-open queue
 - `apps/demo-api/src/app.ts`: demo API factory ve SDK kurulumu
+- `apps/demo-api/src/requestlab-config.ts`: Demo API SDK environment timeout doğrulaması ve seçenek wiring'i
 - `apps/demo-api/tests/demo.test.ts`: demo senaryoları ve SDK capture testleri
 - `apps/web/src/api.ts`: merkezi frontend API istemcisi
 - `apps/web/src/main.tsx`: dashboard route'ları ve bileşenleri
@@ -157,6 +160,7 @@ Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL`
 - `scripts/replay-smoke.mjs`: gerçek Upstash Redis + Supabase + demo API replay smoke testi başarılı; tüm başlatılan PID'ler kapatıldı ve smoke portları temiz doğrulandı.
 - Aşama 6A regression: `47` test başarılı; production user-header isolation, scoped/expiring demo session, demo API trigger allowlist ve rate-limit `429` doğrulandı.
 - Aşama 6A static checks: `db:validate`, workspace build, `typecheck`, `lint`, `deploy:check`, Prettier ve `git diff --check` başarılı. `db:generate` Windows Prisma engine DLL kilidi nedeniyle `EPERM` verdi; migration veya schema değiştirilmedi.
+- Demo API timeout patch testleri: validated `REQUESTLAB_TIMEOUT_MS` wiring, invalid-value fallback, successful login `200`, successful order `201`, fail-open ingestion timeout ve successful login response token redaction doğrulandı.
 
 Docker CLI bu ortamda bulunmadı; replay migration'ı güvenli GitHub Actions workflow'u üzerinden Supabase'e uygulandı. Migration geçmişi değiştirilmedi ve yeni migration üretimi yapılmadı. Gerçek Supabase veritabanı round-trip ve replay smoke doğrulaması tamamlandı. Event ID, API key ve bağlantı değerleri loglanmadı veya dokümana yazılmadı.
 
@@ -185,8 +189,16 @@ Replay API, `ReplayRun` durumları ve worker sözleşmesi korunarak frontend ak�
 - Render free servislerinin sleep/cold-start davranışı ve uygulanmamış Aşama 6B deployment checklist'i `docs/deployment.md` içindedir.
 - Browser otomasyonu mevcut değildir; gerçek Vercel/Render/Supabase/Upstash doğrulaması ve manuel browser kontrolü Aşama 6B'ye bırakıldı.
 
+## Aşama 6B durumu
+
+- Canlı frontend, API ve Demo API endpointleri doğrulandı; public session/bootstrap başarılıdır.
+- `order-error` wrapper `200` / hedef `500`, `login-error` wrapper `200` / hedef `401` ve `slow-request` wrapper `200` / hedef `200` sonuçları doğrulandı.
+- Her senaryo yalnızca gerçek hedef event'i oluşturdu; health, internal wrapper ve scanner path'leri event oluşturmadı. Password ve authorization redaction doğrulandı.
+- Successful event ingestion cold-start sorunu için Demo API timeout patch'i eklendi ve Render konfigürasyonuna `REQUESTLAB_TIMEOUT_MS=30000` yazıldı. Bu çalışma deployment veya environment mutation yapmadı; patch'in production'da etkinleşmesi için ayrı deployment gerekir.
+- Public Settings demo modunda API key endpoint'i çağırmama, CORS/security header'ları, replay sınırları ve responsive CSS kontrolleri tamamlandı. Browser otomasyonu bu ortamda mevcut değildir.
+
 ## Sonraki aşama
 
-Deployment checklist'ini uygulamak Aşama 6B kapsamındadır. Bu aşamada gerçek service/DNS değişikliği yapılmamalıdır.
+Timeout patch'ini production'da etkinleştirmek için deployment checklist'i ayrı olarak uygulanmalıdır. Bu çalışma sırasında gerçek service/DNS/environment değişikliği yapılmamalıdır.
 
 Her sonraki aşamanın sonunda bu dosya güncellenmelidir.

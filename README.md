@@ -8,7 +8,16 @@ PostgreSQL veri modeli, Event API, Node SDK, replay backend'i ve gerçek Supabas
 
 ## Live Demo
 
-Aşama 6B'de eklenecek. Bu aşamada gerçek deployment, DNS veya public URL doğrulaması yapılmadı.
+- Frontend: `https://requestlab.yusufdere.com`
+- API: `https://api.requestlab.yusufdere.com`
+- Demo API: `https://demo.requestlab.yusufdere.com`
+
+Production session/bootstrap ve üç allowlisted demo senaryosu doğrulandı. Demo API'nin
+RequestLab event gönderim timeout'u `REQUESTLAB_TIMEOUT_MS` ile kontrol edilir; değer
+`1..30000` ms arasında pozitif bir integer olmalıdır. Boş veya geçersiz değer güvenli
+`1000` ms varsayılanına düşer. Render production demo servisi `30000` ms kullanır.
+Bu repository değişikliği deployment yapmaz; Render environment değeri deployment
+konfigürasyonunda tutulur.
 
 ## Teknolojiler ve klasörler
 
@@ -49,7 +58,7 @@ Copy-Item .env.example .env
 
 Frontend için `apps/web/.env.local` dosyasında yalnızca `VITE_REQUESTLAB_API_URL` ve `VITE_REQUESTLAB_DEV_USER_ID` tanımlanır; örnek `apps/web/.env.example` içindedir. Vite config'inde `envDir` açıkça `apps/web` olarak ayarlandığı için bu dosya yüklenir. `VITE_REQUESTLAB_DEV_USER_ID`, `pnpm db:seed` çıktısındaki seed kullanıcısının ID'siyle aynı olmalıdır; bu değer client tarafından `x-requestlab-user-id` header'ı olarak gönderilir. Frontend ingestion API key, `DATABASE_URL` veya `DIRECT_URL` içermez. Bu development header'ı production kimlik doğrulaması değildir.
 
-SDK kullanan demo API için `.env` içinde `REQUESTLAB_API_URL`, `REQUESTLAB_API_KEY` ve isteğe bağlı `REQUESTLAB_ENVIRONMENT` değişkenlerini tanımlayın. SDK yapılandırılmamışsa demo API yine başlar ve yalnızca yerel senaryoları çalıştırır.
+SDK kullanan demo API için `.env` içinde `REQUESTLAB_API_URL`, `REQUESTLAB_API_KEY` ve isteğe bağlı `REQUESTLAB_ENVIRONMENT`, `REQUESTLAB_CAPTURE_MODE` ve `REQUESTLAB_TIMEOUT_MS` değişkenlerini tanımlayın. `REQUESTLAB_TIMEOUT_MS` yalnızca `1..30000` ms arasındaki pozitif integer değerleri kabul eder; geçersiz değer `1000` ms varsayılanını kullanır. SDK yapılandırılmamışsa demo API yine başlar ve yalnızca yerel senaryoları çalıştırır. Event gönderimi fail-open'tur; ingestion API erişilemez veya yavaş olsa da demo business response'u bozulmaz.
 
 Compose servisleri:
 
@@ -154,7 +163,7 @@ pnpm --filter @requestlab/web dev
 pnpm exec node scripts/real-smoke.mjs
 ```
 
-Senaryo endpointleri `GET /api/products`, `POST /api/orders`, `POST /api/login`, `GET /api/slow` ve `GET /api/scenarios` yollarıdır. SDK varsayılan olarak yalnızca hata eventlerini yakalar; demo için `REQUESTLAB_CAPTURE_MODE=all` kullanılabilir. Fastify entegrasyonunda `ignorePaths` veya eşdeğer `excludePaths` ile tam path'ler event capture dışı bırakılabilir; `includePaths` veya eşdeğer `capturePaths` verildiğinde yalnızca listedeki tam path'ler yakalanır. Karşılaştırmalar query string'i dikkate almaz. Demo API allowlist'i yalnızca `/api/products`, `/api/orders`, `/api/orders/order-1`, `/api/auth/login` ve `/api/demo/slow` yollarını içerir; Render health-check, internal scenario wrapper, scanner ve bilinmeyen 404 istekleri event oluşturmaz.
+Senaryo endpointleri `GET /api/products`, `POST /api/orders`, `POST /api/auth/login`, `GET /api/demo/slow` ve `GET /api/demo/scenarios` yollarıdır. SDK varsayılan olarak yalnızca hata eventlerini yakalar; demo için `REQUESTLAB_CAPTURE_MODE=all` kullanılabilir. Fastify entegrasyonunda `ignorePaths` veya eşdeğer `excludePaths` ile tam path'ler event capture dışı bırakılabilir; `includePaths` veya eşdeğer `capturePaths` verildiğinde yalnızca listedeki tam path'ler yakalanır. Karşılaştırmalar query string'i dikkate almaz. Demo API allowlist'i yalnızca `/api/products`, `/api/orders`, `/api/orders/order-1`, `/api/auth/login` ve `/api/demo/slow` yollarını içerir; Render health-check, internal scenario wrapper, scanner ve bilinmeyen 404 istekleri event oluşturmaz.
 
 Eski demo health event'lerini temizlemek için önce yalnızca hedef sayısını gösteren dry-run çalıştırın. `DEMO_PROJECT_SLUG` tek bir proje slug'ı olmalıdır:
 

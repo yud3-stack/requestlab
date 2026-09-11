@@ -1,11 +1,34 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDemoApp } from "../src/app.js";
+import {
+  DEFAULT_REQUESTLAB_TIMEOUT_MS,
+  getRequestLabOptions,
+  MAX_REQUESTLAB_TIMEOUT_MS
+} from "../src/requestlab-config.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("demo API scenarios", () => {
+  it("passes a validated environment timeout to the SDK", async () => {
+    const options = getRequestLabOptions({
+      REQUESTLAB_API_URL: "http://requestlab.test",
+      REQUESTLAB_API_KEY: "rlk_demo",
+      REQUESTLAB_TIMEOUT_MS: String(MAX_REQUESTLAB_TIMEOUT_MS)
+    });
+    const invalidOptions = getRequestLabOptions({
+      REQUESTLAB_API_URL: "http://requestlab.test",
+      REQUESTLAB_API_KEY: "rlk_demo",
+      REQUESTLAB_TIMEOUT_MS: "-1"
+    });
+    const app = createDemoApp({ logger: false, requestLab: options });
+
+    expect(app.requestLab?.options.timeoutMs).toBe(MAX_REQUESTLAB_TIMEOUT_MS);
+    expect(invalidOptions?.timeoutMs).toBe(DEFAULT_REQUESTLAB_TIMEOUT_MS);
+    await app.close();
+  });
+
   it("serves products and an existing order", async () => {
     const app = createDemoApp({ logger: false });
     expect((await app.inject({ method: "GET", url: "/api/products" })).statusCode).toBe(200);
@@ -202,6 +225,94 @@ describe("demo API scenarios", () => {
     expect(sent.filter((event) => event.path === "/api/orders")).toHaveLength(1);
     expect(sent.filter((event) => event.path === "/api/auth/login")).toHaveLength(1);
     expect(sent.filter((event) => event.path === "/api/demo/slow")).toHaveLength(1);
+    await app.close();
+  });
+
+  it("keeps successful handlers successful when event ingestion times out", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error("ingestion unavailable")), 50);
+            init.signal?.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timer);
+                reject(new Error("ingestion timed out"));
+              },
+              { once: true }
+            );
+          })
+      )
+    );
+    const app = createDemoApp({
+      logger: false,
+      requestLab: {
+        apiUrl: "http://requestlab.test",
+        apiKey: "rlk_demo",
+        environment: "development",
+        captureMode: "all",
+        timeoutMs: 5,
+        includePaths: ["/api/orders", "/api/auth/login"]
+      }
+    });
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "demo@example.com", password: "secret-value" }
+    });
+    const order = await app.inject({
+      method: "POST",
+      url: "/api/orders",
+      payload: {
+        productId: "product-1",
+        quantity: 1,
+        shippingAddress: { city: "Istanbul" }
+      }
+    });
+    await app.requestLab?.flush();
+
+    expect(login.statusCode).toBe(200);
+    expect(order.statusCode).toBe(201);
+    expect(app.requestLab?.getStats().failed).toBe(2);
+    await app.close();
+  });
+
+  it("masks a successful login response token before ingestion", async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        sent.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response("{}", { status: 201 });
+      })
+    );
+    const app = createDemoApp({
+      logger: false,
+      requestLab: {
+        apiUrl: "http://requestlab.test",
+        apiKey: "rlk_demo",
+        environment: "development",
+        captureMode: "all",
+        includePaths: ["/api/auth/login"]
+      }
+    });
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "demo@example.com", password: "secret-value" }
+    });
+    await app.requestLab?.flush();
+
+    const event = sent.find((item) => item.path === "/api/auth/login");
+    expect(login.statusCode).toBe(200);
+    expect((event?.requestBody as { password?: string } | undefined)?.password).toBe("[REDACTED]");
+    expect((event?.responseBody as { data?: { token?: string } } | undefined)?.data?.token).toBe(
+      "[REDACTED]"
+    );
     await app.close();
   });
 

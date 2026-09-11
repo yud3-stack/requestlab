@@ -72,3 +72,5 @@ services:
         value: production
       - key: REQUESTLAB_CAPTURE_MODE
         value: all
+      - key: REQUESTLAB_TIMEOUT_MS
+        value: "30000"

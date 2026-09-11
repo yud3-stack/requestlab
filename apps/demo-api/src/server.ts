@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import type { FastifyInstance } from "fastify";
 import { createDemoApp } from "./app.js";
+import { getRequestLabOptions } from "./requestlab-config.js";
 
 export async function main(): Promise<void> {
   let app: FastifyInstance | undefined;
@@ -9,8 +10,7 @@ export async function main(): Promise<void> {
 
     const apiUrl = process.env.REQUESTLAB_API_URL;
     const apiKey = process.env.REQUESTLAB_API_KEY;
-    const environment = process.env.REQUESTLAB_ENVIRONMENT ?? "development";
-    const captureMode = process.env.REQUESTLAB_CAPTURE_MODE === "all" ? "all" : "errors";
+    const requestLab = getRequestLabOptions();
     const corsAllowedOrigins =
       process.env.NODE_ENV === "production"
         ? (process.env.CORS_ALLOWED_ORIGINS || "")
@@ -19,27 +19,9 @@ export async function main(): Promise<void> {
             .filter(Boolean)
         : ["http://localhost:5173", "http://127.0.0.1:5173"];
     app = createDemoApp(
-      apiUrl && apiKey
+      requestLab
         ? {
-            requestLab: {
-              apiUrl,
-              apiKey,
-              environment,
-              captureMode,
-              ignorePaths: [
-                "/health",
-                "/internal/demo/scenarios/order-error",
-                "/internal/demo/scenarios/login-error",
-                "/internal/demo/scenarios/slow-request"
-              ],
-              includePaths: [
-                "/api/products",
-                "/api/orders",
-                "/api/orders/order-1",
-                "/api/auth/login",
-                "/api/demo/slow"
-              ]
-            },
+            requestLab,
             nodeEnv: process.env.NODE_ENV,
             triggerSecret: process.env.DEMO_TRIGGER_SECRET,
             corsAllowedOrigins
