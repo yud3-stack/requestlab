@@ -48,6 +48,13 @@ import {
 } from "@requestlab/shared";
 import type { ApiKey, Environment, Project } from "./api";
 import { api, ApiError, ensureDemoSession, getDemoBootstrap, resetDemoSession } from "./api";
+import "@fontsource/manrope/400.css";
+import "@fontsource/manrope/500.css";
+import "@fontsource/manrope/600.css";
+import "@fontsource/manrope/700.css";
+import "@fontsource/manrope/800.css";
+import "@fontsource/dm-mono/400.css";
+import "@fontsource/dm-mono/500.css";
 import "./styles.css";
 
 const publicDemoMode = import.meta.env.VITE_DEMO_MODE === "true";
