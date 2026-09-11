@@ -161,6 +161,7 @@ Database scriptleri `packages/database/prisma.config.ts` üzerinden `DIRECT_URL`
 - Aşama 6A regression: `47` test başarılı; production user-header isolation, scoped/expiring demo session, demo API trigger allowlist ve rate-limit `429` doğrulandı.
 - Aşama 6A static checks: `db:validate`, workspace build, `typecheck`, `lint`, `deploy:check`, Prettier ve `git diff --check` başarılı. `db:generate` Windows Prisma engine DLL kilidi nedeniyle `EPERM` verdi; migration veya schema değiştirilmedi.
 - Demo API timeout patch testleri: validated `REQUESTLAB_TIMEOUT_MS` wiring, invalid-value fallback, successful login `200`, successful order `201`, fail-open ingestion timeout ve successful login response token redaction doğrulandı.
+- Final Aşama 6B production kabulü bağımsız olarak başarılı doğrulandı: public session `200`, başarılı login `200` ve event, başarılı order `201` ve event; login event detayında `[REDACTED]`, plaintext password/token yok. Production `DEMO_PROJECT_SLUG` ve `render.yaml` değeri `shop-api` olarak doğrulandı.
 
 Docker CLI bu ortamda bulunmadı; replay migration'ı güvenli GitHub Actions workflow'u üzerinden Supabase'e uygulandı. Migration geçmişi değiştirilmedi ve yeni migration üretimi yapılmadı. Gerçek Supabase veritabanı round-trip ve replay smoke doğrulaması tamamlandı. Event ID, API key ve bağlantı değerleri loglanmadı veya dokümana yazılmadı.
 
@@ -185,8 +186,8 @@ Replay API, `ReplayRun` durumları ve worker sözleşmesi korunarak frontend ak�
 - `RUN_REPLAY_WORKER=true` ile API aynı process içinde replay worker başlatabilir; shutdown sırasında worker, queue ve database bağlantıları kapatılır. Ayrı worker uygulaması local kullanımda korunur.
 - Production'da `x-requestlab-user-id` kabul edilmez. Public demo bearer token kısa ömürlüdür, yalnızca demo project scope'una sahiptir ve browser belleğinde tutulur.
 - Vercel `vercel.json`, iki servisli Render `render.yaml`, `demo:cleanup`, günlük/manual cleanup workflow'u ve `deploy:check` eklendi.
-- Gerçek deployment, DNS, Vercel/Render/Supabase/Upstash değişikliği ve LinkedIn paylaşımı yapılmadı.
-- Render free servislerinin sleep/cold-start davranışı ve uygulanmamış Aşama 6B deployment checklist'i `docs/deployment.md` içindedir.
+- Mevcut production deployment ve DNS endpointleri Aşama 6B kapsamında doğrulandı; bu çalışma sırasında yeni deployment veya service/environment mutation yapılmadı.
+- Render free servislerinin sleep/cold-start davranışı ve production deployment prosedürü `docs/deployment.md` içindedir.
 - Browser otomasyonu mevcut değildir; gerçek Vercel/Render/Supabase/Upstash doğrulaması ve manuel browser kontrolü Aşama 6B'ye bırakıldı.
 
 ## Aşama 6B durumu
@@ -194,11 +195,11 @@ Replay API, `ReplayRun` durumları ve worker sözleşmesi korunarak frontend ak�
 - Canlı frontend, API ve Demo API endpointleri doğrulandı; public session/bootstrap başarılıdır.
 - `order-error` wrapper `200` / hedef `500`, `login-error` wrapper `200` / hedef `401` ve `slow-request` wrapper `200` / hedef `200` sonuçları doğrulandı.
 - Her senaryo yalnızca gerçek hedef event'i oluşturdu; health, internal wrapper ve scanner path'leri event oluşturmadı. Password ve authorization redaction doğrulandı.
-- Successful event ingestion cold-start sorunu için Demo API timeout patch'i eklendi ve Render konfigürasyonuna `REQUESTLAB_TIMEOUT_MS=30000` yazıldı. Bu çalışma deployment veya environment mutation yapmadı; patch'in production'da etkinleşmesi için ayrı deployment gerekir.
+- Successful event ingestion cold-start sorunu için Demo API timeout patch'i eklendi ve Render konfigürasyonuna `REQUESTLAB_TIMEOUT_MS=30000` yazıldı. Production'da başarılı login/order eventleri ve token/password redaction bağımsız olarak doğrulandı.
 - Public Settings demo modunda API key endpoint'i çağırmama, CORS/security header'ları, replay sınırları ve responsive CSS kontrolleri tamamlandı. Browser otomasyonu bu ortamda mevcut değildir.
 
 ## Sonraki aşama
 
-Timeout patch'ini production'da etkinleştirmek için deployment checklist'i ayrı olarak uygulanmalıdır. Bu çalışma sırasında gerçek service/DNS/environment değişikliği yapılmamalıdır.
+Production kabulü kapatıldı. Kalan sonraki çalışmalar gerçek kullanıcı authentication sistemi ve browser otomasyonlu görsel regresyondur; bu çalışma sırasında gerçek service/DNS/environment değişikliği yapılmamalıdır.
 
 Her sonraki aşamanın sonunda bu dosya güncellenmelidir.

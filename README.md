@@ -4,7 +4,7 @@ RequestLab, gerçek uygulamalarda oluşan API hatalarını kaydetmek, incelemek 
 
 ## Aşama 5B durumu
 
-PostgreSQL veri modeli, Event API, Node SDK, replay backend'i ve gerçek Supabase verileriyle çalışan frontend dashboard tamamlandı. Replay frontend'i güvenli form, polling, liste/detay ve JSON karşılaştırma akışlarını içerir. Gerçek kullanıcı login'i ve production deployment kapsam dışıdır.
+PostgreSQL veri modeli, Event API, Node SDK, replay backend'i ve gerçek Supabase verileriyle çalışan frontend dashboard tamamlandı. Replay frontend'i güvenli form, polling, liste/detay ve JSON karşılaştırma akışlarını içerir. Gerçek kullanıcı login'i kapsam dışıdır; production deployment Aşama 6B'de doğrulanmıştır.
 
 ## Live Demo
 
@@ -18,6 +18,11 @@ RequestLab event gönderim timeout'u `REQUESTLAB_TIMEOUT_MS` ile kontrol edilir;
 `1000` ms varsayılanına düşer. Render production demo servisi `30000` ms kullanır.
 Bu repository değişikliği deployment yapmaz; Render environment değeri deployment
 konfigürasyonunda tutulur.
+
+Production kabulü tamamlandı: public session `200`, başarılı login `200` ve event,
+başarılı order `201` ve event olarak bağımsız doğrulandı. Login event detaylarında
+`[REDACTED]` mevcuttur; plaintext password ve token bulunmamıştır. Production demo
+projesi `DEMO_PROJECT_SLUG=shop-api` olarak doğrulanmıştır.
 
 ## Teknolojiler ve klasörler
 
@@ -197,7 +202,7 @@ Workflow Ubuntu runner üzerinde Node.js ve pnpm kurar, frozen lockfile ile bağ
 
 ## Sonraki aşamalar
 
-Gerçek kullanıcı login sistemi, production deployment ve browser otomasyonlu görsel regresyon sonraki aşamalardır.
+Gerçek kullanıcı login sistemi ve browser otomasyonlu görsel regresyon sonraki aşamalardır.
 
 ## Dashboard
 
@@ -228,7 +233,7 @@ Başarısız event detayından güvenli replay formu açılır. Form yalnızca a
 
 `/replays` replay geçmişini durum ve environment filtreleriyle listeler. `/replays/:replayId` QUEUED/RUNNING durumlarını polling ile izler, terminal durumda veya 30 saniye sonra durur ve sonuç oluştuğunda orijinal event ile JSON body/duration karşılaştırması gösterir.
 
-Production deployment hazırlığı, public demo auth/scenario sınırları, Vercel/Render blueprint'leri ve cleanup süreci için `docs/deployment.md` dosyasına bakın. Render free servisleri uykuya geçebilir ve ilk istekte cold start yaşanabilir.
+Production deployment, public demo auth/scenario sınırları, Vercel/Render blueprint'leri ve cleanup süreci için `docs/deployment.md` dosyasına bakın. Render free servisleri uykuya geçebilir ve ilk istekte cold start yaşanabilir; Demo API event gönderimi `REQUESTLAB_TIMEOUT_MS=30000` ile fail-open çalışır.
 
 ## Supabase doğrulama notu
 
