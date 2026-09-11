@@ -95,21 +95,31 @@ describe("demo API scenarios", () => {
         apiKey: "rlk_demo",
         environment: "development",
         captureMode: "all",
-        ignorePaths: ["/health"]
+        ignorePaths: ["/health"],
+        includePaths: [
+          "/api/products",
+          "/api/orders",
+          "/api/orders/order-1",
+          "/api/auth/login",
+          "/api/demo/slow"
+        ]
       }
     });
     await app.ready();
     expect(app.requestLab).toBeDefined();
     await app.inject({
       method: "GET",
-      url: "/api/products",
+      url: "/api/products?source=browser",
       headers: { "x-request-id": "demo-request-id" }
     });
+    expect((await app.inject({ method: "GET", url: "/api/orders/order-1" })).statusCode).toBe(200);
     expect((await app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
     expect((await app.inject({ method: "GET", url: "/health?source=render" })).statusCode).toBe(
       200
     );
     expect((await app.inject({ method: "GET", url: "/health-check" })).statusCode).toBe(404);
+    for (const url of ["/.env", "/api/.env", "/config/.env", "/api/products/other", "/unknown"])
+      expect((await app.inject({ method: "GET", url })).statusCode).toBe(404);
     await app.inject({
       method: "POST",
       url: "/api/orders",
@@ -126,7 +136,15 @@ describe("demo API scenarios", () => {
       true
     );
     expect(sent.some((event) => event.path === "/health")).toBe(false);
-    expect(sent.some((event) => event.path === "/health-check")).toBe(true);
+    expect(sent.some((event) => event.path === "/health-check")).toBe(false);
+    expect(sent.some((event) => event.path === "/.env")).toBe(false);
+    expect(sent.some((event) => event.path === "/api/.env")).toBe(false);
+    expect(sent.some((event) => event.path === "/config/.env")).toBe(false);
+    expect(sent.some((event) => event.path === "/api/products/other")).toBe(false);
+    expect(sent.some((event) => event.path === "/unknown")).toBe(false);
+    expect(
+      sent.some((event) => event.path === "/api/orders/order-1" && event.statusCode === 200)
+    ).toBe(true);
     const failedOrder = sent.find((event) => event.path === "/api/orders");
     expect(failedOrder?.statusCode).toBe(500);
     expect(
@@ -162,7 +180,14 @@ describe("demo API scenarios", () => {
         apiKey: "rlk_demo",
         environment: "development",
         captureMode: "all",
-        ignorePaths: ["/health", ...wrappers]
+        ignorePaths: ["/health", ...wrappers],
+        includePaths: [
+          "/api/products",
+          "/api/orders",
+          "/api/orders/order-1",
+          "/api/auth/login",
+          "/api/demo/slow"
+        ]
       }
     });
     await app.ready();

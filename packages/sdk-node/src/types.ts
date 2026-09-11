@@ -8,6 +8,8 @@ export type RequestLabOptions = {
   captureMode?: "errors" | "all";
   ignorePaths?: string[];
   excludePaths?: string[];
+  includePaths?: string[];
+  capturePaths?: string[];
   timeoutMs?: number;
   maxBodyBytes?: number;
   maxQueueSize?: number;

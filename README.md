@@ -154,7 +154,7 @@ pnpm --filter @requestlab/web dev
 pnpm exec node scripts/real-smoke.mjs
 ```
 
-Senaryo endpointleri `GET /api/products`, `POST /api/orders`, `POST /api/login`, `GET /api/slow` ve `GET /api/scenarios` yollarıdır. SDK varsayılan olarak yalnızca hata eventlerini yakalar; demo için `REQUESTLAB_CAPTURE_MODE=all` kullanılabilir. Fastify entegrasyonunda `ignorePaths` veya eşdeğer `excludePaths` ile tam path'ler event capture dışı bırakılabilir; karşılaştırma query string'i dikkate almaz. Demo API, Render health-check çağrıları ve internal scenario wrapper'ları event kirliliği oluşturmaması için hariç tutar; gerçek ürün, hata ve slow-request hedefleri capture edilmeye devam eder.
+Senaryo endpointleri `GET /api/products`, `POST /api/orders`, `POST /api/login`, `GET /api/slow` ve `GET /api/scenarios` yollarıdır. SDK varsayılan olarak yalnızca hata eventlerini yakalar; demo için `REQUESTLAB_CAPTURE_MODE=all` kullanılabilir. Fastify entegrasyonunda `ignorePaths` veya eşdeğer `excludePaths` ile tam path'ler event capture dışı bırakılabilir; `includePaths` veya eşdeğer `capturePaths` verildiğinde yalnızca listedeki tam path'ler yakalanır. Karşılaştırmalar query string'i dikkate almaz. Demo API allowlist'i yalnızca `/api/products`, `/api/orders`, `/api/orders/order-1`, `/api/auth/login` ve `/api/demo/slow` yollarını içerir; Render health-check, internal scenario wrapper, scanner ve bilinmeyen 404 istekleri event oluşturmaz.
 
 Eski demo health event'lerini temizlemek için önce yalnızca hedef sayısını gösteren dry-run çalıştırın. `DEMO_PROJECT_SLUG` tek bir proje slug'ı olmalıdır:
 

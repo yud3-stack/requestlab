@@ -141,6 +141,48 @@ describe("RequestLab SDK", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("captures only exact included paths and ignores query strings", async () => {
+    const fetchMock = vi.fn(async () => new Response("", { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new RequestLabClient({
+      apiUrl: "http://requestlab.test",
+      apiKey: "rlk_test",
+      environment: "test",
+      captureMode: "all",
+      includePaths: ["/api/products"]
+    });
+
+    expect(
+      client.capture({
+        method: "GET",
+        path: "/api/products?source=browser",
+        statusCode: 200,
+        durationMs: 1
+      })
+    ).toBe(true);
+    expect(
+      client.capture({ method: "GET", path: "/api/products/other", statusCode: 404, durationMs: 1 })
+    ).toBe(false);
+    expect(
+      client.capture({ method: "GET", path: "/api/orders", statusCode: 200, durationMs: 1 })
+    ).toBe(false);
+    await client.flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const aliasClient = new RequestLabClient({
+      apiUrl: "http://requestlab.test",
+      apiKey: "rlk_test",
+      environment: "test",
+      captureMode: "all",
+      capturePaths: ["/api/products"]
+    });
+    expect(
+      aliasClient.capture({ method: "GET", path: "/api/products", statusCode: 200, durationMs: 1 })
+    ).toBe(true);
+    await aliasClient.flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("fails open when the API is unreachable and preserves request ids", async () => {
     const fetchMock = vi.fn(async () => {
       throw new Error("network unavailable");

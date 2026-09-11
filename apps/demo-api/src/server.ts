@@ -31,6 +31,13 @@ export async function main(): Promise<void> {
                 "/internal/demo/scenarios/order-error",
                 "/internal/demo/scenarios/login-error",
                 "/internal/demo/scenarios/slow-request"
+              ],
+              includePaths: [
+                "/api/products",
+                "/api/orders",
+                "/api/orders/order-1",
+                "/api/auth/login",
+                "/api/demo/slow"
               ]
             },
             nodeEnv: process.env.NODE_ENV,
