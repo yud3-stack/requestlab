@@ -165,6 +165,15 @@ pnpm demo:cleanup-health -- --apply
 
 İkinci komut yalnızca açıkça `--apply` verildiğinde exact `/health` event'lerini ve bunlara bağlı replay kayıtlarını siler; `/health-check`, query içeren farklı path'ler ve diğer projeler korunur. Production veritabanında çalıştırmadan önce deployment prosedürünü takip edin.
 
+Eski `.env` scanner event'lerini temizlemek için aynı güvenlik modeliyle önce dry-run çalıştırın:
+
+```bash
+pnpm demo:cleanup-scanner
+pnpm demo:cleanup-scanner -- --apply
+```
+
+Scanner cleanup yalnızca `DEMO_PROJECT_SLUG` projesindeki `GET` ve `404` kayıtlar içinde path segmenti `.env`, `.env.local`, `.env.stage`, `.env-dev` benzeri olanları hedefler. Normal 404 endpointleri, `.environment`, farklı method/status kayıtları ve diğer projeler korunur; `--apply` verilmeden hiçbir kayıt silinmez.
+
 Prisma migration komutları `packages/database/prisma.config.ts` üzerinden `DIRECT_URL` kullanır; migration için Transaction Pooler (`DATABASE_URL`, 6543) kullanılmaz.
 
 ## GitHub Actions migration

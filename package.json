@@ -20,6 +20,7 @@
     "db:seed": "corepack pnpm --filter @requestlab/database db:seed",
     "demo:cleanup": "tsx scripts/demo-cleanup.ts",
     "demo:cleanup-health": "tsx scripts/demo-cleanup-health-cli.mts",
+    "demo:cleanup-scanner": "tsx scripts/demo-cleanup-scanner-cli.mts",
     "deploy:check": "node scripts/deploy-check.mjs",
     "format": "prettier --write ."
   },
