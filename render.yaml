@@ -24,7 +24,7 @@ services:
       - key: DEMO_API_BASE_URL
         value: https://demo.requestlab.yusufdere.com
       - key: DEMO_PROJECT_SLUG
-        value: requestlab-demo
+        value: shop-api
       - key: CORS_ALLOWED_ORIGINS
         value: https://requestlab.yusufdere.com
       - key: RUN_REPLAY_WORKER
