@@ -5,7 +5,10 @@ import { maskSensitiveData } from "../src/lib/masking.js";
 import { hashApiKey } from "../src/lib/security.js";
 import { createDemoToken } from "../src/lib/demo-session.js";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 const user = {
   id: "user-1",
@@ -330,6 +333,47 @@ describe("production public demo boundaries", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().data.statusCode).toBe(500);
+    await app.close();
+  });
+
+  it("allows a demo scenario cold start beyond the old eight-second timeout", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject(new DOMException("timed out", "AbortError"))
+          );
+        })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const app = createApp({
+      db: dbMock(),
+      config: {
+        ...config,
+        demoApiBaseUrl: "https://demo.example.test",
+        demoScenarioTimeoutMs: 45_000
+      }
+    });
+    const token = createDemoToken(
+      { sub: "user-1", projectId: "project-1", exp: Date.now() + 60_000 },
+      config.demoSessionSecret
+    );
+    const responsePromise = app.inject({
+      method: "POST",
+      url: "/api/demo/scenarios/slow-request",
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(37_000);
+
+    const response = await responsePromise;
+    expect(response.statusCode).toBe(502);
+    expect(response.json().error.code).toBe("DEMO_UNAVAILABLE");
     await app.close();
   });
 

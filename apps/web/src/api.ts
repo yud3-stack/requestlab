@@ -60,6 +60,7 @@ const devUserId = import.meta.env.VITE_REQUESTLAB_DEV_USER_ID;
 const demoMode = import.meta.env.VITE_DEMO_MODE === "true";
 const DEFAULT_TIMEOUT_MS = 8_000;
 const PUBLIC_DEMO_TIMEOUT_MS = 45_000;
+const DEMO_SCENARIO_TIMEOUT_MS = 50_000;
 const RETRY_BACKOFF_MS = 250;
 const DEMO_TOKEN_REFRESH_SKEW_MS = 60_000;
 const MAX_RETRIES = 1;
@@ -77,7 +78,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
-    public readonly retryable = false
+    public readonly retryable = false,
+    public readonly code?: string
   ) {
     super(message);
     this.name = "ApiError";
@@ -175,9 +177,11 @@ async function requestOnce<T>(
   const controller = new AbortController();
   const method = (init.method ?? "GET").toUpperCase();
   const timeoutMs =
-    demoMode && import.meta.env.PROD && method === "GET"
-      ? PUBLIC_DEMO_TIMEOUT_MS
-      : DEFAULT_TIMEOUT_MS;
+    method === "POST" && path.startsWith("/api/demo/scenarios/")
+      ? DEMO_SCENARIO_TIMEOUT_MS
+      : demoMode && import.meta.env.PROD && method === "GET"
+        ? PUBLIC_DEMO_TIMEOUT_MS
+        : DEFAULT_TIMEOUT_MS;
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
@@ -203,17 +207,23 @@ async function requestOnce<T>(
       throw new ApiError(response.status, "Sunucudan geçersiz JSON yanıtı alındı.");
     }
     if (!response.ok) {
-      const message =
+      const responseError =
         typeof body === "object" &&
         body !== null &&
         "error" in body &&
         typeof body.error === "object" &&
-        body.error !== null &&
-        "message" in body.error &&
-        typeof body.error.message === "string"
-          ? body.error.message
+        body.error !== null
+          ? body.error
+          : undefined;
+      const message =
+        responseError && "message" in responseError && typeof responseError.message === "string"
+          ? responseError.message
           : `İstek başarısız oldu (${response.status}).`;
-      throw new ApiError(response.status, message);
+      const code =
+        responseError && "code" in responseError && typeof responseError.code === "string"
+          ? responseError.code
+          : undefined;
+      throw new ApiError(response.status, message, false, code);
     }
     return body as T;
   } catch (error) {

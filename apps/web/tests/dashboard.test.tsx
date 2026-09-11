@@ -11,9 +11,11 @@ vi.mock("../src/api", async () => {
   return {
     ApiError: class extends Error {
       status: number;
-      constructor(status: number, message: string) {
+      code?: string;
+      constructor(status: number, message: string, _retryable = false, code?: string) {
         super(message);
         this.status = status;
+        this.code = code;
       }
     },
     ensureDemoSession: vi.fn(),
@@ -29,7 +31,8 @@ vi.mock("../src/api", async () => {
       keys: vi.fn(),
       createReplay: vi.fn(),
       replays: vi.fn(),
-      replay: vi.fn()
+      replay: vi.fn(),
+      demoScenario: vi.fn()
     }
   };
 });
@@ -221,6 +224,20 @@ describe("dashboard", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Tekrar Dene" }));
     await waitFor(() => expect(ensureDemoSession).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("Toplam istek")).toBeInTheDocument();
+  });
+  it("shows the Turkish message for an unavailable demo scenario", async () => {
+    vi.mocked(getDemoBootstrap).mockReturnValue({
+      project,
+      environments: [environment]
+    });
+    vi.mocked(api.demoScenario).mockRejectedValue(
+      new ApiError(503, "Demo scenario is unavailable", false, "DEMO_UNAVAILABLE")
+    );
+    renderApp("/", true);
+
+    expect(await screen.findByText("Toplam istek")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Eksik shippingAddress (500)" }));
+    expect(await screen.findByText("Demo senaryosu şu anda kullanılamıyor.")).toBeInTheDocument();
   });
   it("shows real overview data", async () => {
     renderApp();

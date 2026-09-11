@@ -3,6 +3,7 @@ import { resolveDemoProject, createDemoToken, requireDemoSession } from "../../l
 import { clientKey, RateLimiter } from "../../lib/rate-limit.js";
 import { AppError } from "../../lib/errors.js";
 import type { AppContext } from "../../types/context.js";
+import { DEFAULT_DEMO_SCENARIO_TIMEOUT_MS } from "../../config/index.js";
 
 const scenarios = new Set(["order-error", "login-error", "slow-request"]);
 
@@ -66,7 +67,10 @@ export function registerDemoRoutes(app: FastifyInstance, context: AppContext): v
           ? 401
           : 200;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8_000);
+    const timer = setTimeout(
+      () => controller.abort(),
+      context.config.demoScenarioTimeoutMs ?? DEFAULT_DEMO_SCENARIO_TIMEOUT_MS
+    );
     try {
       const response = await fetch(url, {
         method: "POST",

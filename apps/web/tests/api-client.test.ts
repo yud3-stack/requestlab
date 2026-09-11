@@ -141,6 +141,21 @@ describe("public demo session", () => {
 });
 
 describe("request retry policy", () => {
+  it("preserves the DEMO_UNAVAILABLE error code from API responses", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(503, { error: { code: "DEMO_UNAVAILABLE", message: "unavailable" } })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.demoScenario("slow-request")).rejects.toMatchObject({
+      status: 503,
+      code: "DEMO_UNAVAILABLE"
+    });
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
   it("retries a safe GET once and never retries a mutation", async () => {
     const fetchMock = vi
       .fn()
@@ -204,6 +219,39 @@ describe("request retry policy", () => {
 
     await expect(promise).rejects.toMatchObject({ status: 0 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits 50 seconds for demo scenario mutations without retrying them", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("VITE_DEMO_MODE", "true");
+    vi.stubEnv("PROD", true);
+    vi.resetModules();
+    const { api: demoApi } = await import("../src/api");
+    let scenarioAttempts = 0;
+    const fetchMock = vi.fn((url: string, init: RequestInit) => {
+      if (url.endsWith("/api/demo/session"))
+        return Promise.resolve(
+          jsonResponse(200, { data: { token: "rlk_public", expiresInSeconds: 1800 } })
+        );
+      scenarioAttempts += 1;
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () =>
+          reject(new DOMException("timed out", "AbortError"))
+        );
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = demoApi.demoScenario("slow-request");
+    const rejected = expect(request).rejects.toMatchObject({ status: 408 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(scenarioAttempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(49_999);
+    expect(scenarioAttempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await rejected;
+    expect(scenarioAttempts).toBe(1);
   });
 
   it("uses the 45-second timeout only for production public-demo GETs", async () => {

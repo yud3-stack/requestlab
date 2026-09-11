@@ -255,7 +255,9 @@ function Shell({
         <Routes>
           <Route
             path="/"
-            element={<Overview projectId={projectId} environmentId={environment?.id} />}
+            element={
+              <Overview projectId={projectId} environmentId={environment?.id} demoMode={demoMode} />
+            }
           />
           <Route
             path="/requests"
@@ -305,7 +307,15 @@ function Connection() {
     </span>
   );
 }
-function Overview({ projectId, environmentId }: { projectId: string; environmentId?: string }) {
+function Overview({
+  projectId,
+  environmentId,
+  demoMode
+}: {
+  projectId: string;
+  environmentId?: string;
+  demoMode: boolean;
+}) {
   const stats = useQuery({
     queryKey: ["stats", projectId, environmentId],
     queryFn: ({ signal }) => api.stats(projectId, { environmentId }, signal),
@@ -315,7 +325,7 @@ function Overview({ projectId, environmentId }: { projectId: string; environment
   return (
     <Page title="Genel Bakış" subtitle="Gerçek API trafiğinizin sağlık görünümü">
       <Toolbar onRefresh={() => stats.refetch()} loading={stats.isFetching} />
-      {publicDemoMode && <DemoScenarios />}
+      {demoMode && <DemoScenarios />}
       {stats.isLoading || !environmentId ? (
         <SkeletonGrid />
       ) : stats.isError ? (
@@ -340,8 +350,12 @@ function DemoScenarios() {
     try {
       const result = await api.demoScenario(scenario);
       setMessage(`${scenario}: ${result.data.statusCode}`);
-    } catch {
-      setMessage("Demo senaryosu şu anda kullanılamıyor.");
+    } catch (error) {
+      setMessage(
+        error instanceof ApiError && error.code === "DEMO_UNAVAILABLE"
+          ? errorMessage(error)
+          : "Demo senaryosu şu anda kullanılamıyor."
+      );
     } finally {
       setRunning("");
     }
@@ -1780,15 +1794,19 @@ function StartupError({
   onRetry: () => void;
   retrying: boolean;
 }) {
-  const timeout = error instanceof ApiError && [0, 408, 502, 503].includes(error.status);
+  const unavailable = error instanceof ApiError && error.code === "DEMO_UNAVAILABLE";
+  const timeout =
+    !unavailable && error instanceof ApiError && [0, 408, 502, 503].includes(error.status);
   return (
     <div className="center-state">
       <AlertTriangle />
       <strong>{timeout ? "Ücretsiz demo başlatılamadı" : "Project verisi alınamadı"}</strong>
       <p>
-        {timeout
-          ? "İlk bağlantı zaman aşımına uğradı. Lütfen tekrar deneyin."
-          : errorMessage(error)}
+        {unavailable
+          ? errorMessage(error)
+          : timeout
+            ? "İlk bağlantı zaman aşımına uğradı. Lütfen tekrar deneyin."
+            : errorMessage(error)}
       </p>
       <button className="ghost-button" onClick={onRetry} disabled={retrying}>
         <RefreshCw size={15} className={retrying ? "spin" : undefined} />
@@ -1824,6 +1842,8 @@ function formatDate(value: string) {
   );
 }
 function errorMessage(error: unknown) {
+  if (error instanceof ApiError && error.code === "DEMO_UNAVAILABLE")
+    return "Demo senaryosu şu anda kullanılamıyor.";
   return error instanceof ApiError ? error.message : "Beklenmeyen bir bağlantı hatası oluştu.";
 }
 
