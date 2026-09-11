@@ -19,13 +19,16 @@
     "db:migrate": "corepack pnpm --filter @requestlab/database db:migrate",
     "db:seed": "corepack pnpm --filter @requestlab/database db:seed",
     "demo:cleanup": "tsx scripts/demo-cleanup.ts",
+    "demo:cleanup-health": "tsx scripts/demo-cleanup-health-cli.ts",
     "deploy:check": "node scripts/deploy-check.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {
     "@requestlab/config": "workspace:*",
+    "@requestlab/database": "workspace:*",
     "@types/node": "^22.15.0",
     "concurrently": "^9.2.1",
+    "dotenv": "^16.6.1",
     "eslint": "^9.34.0",
     "prettier": "^3.6.2",
     "tsx": "^4.20.5",

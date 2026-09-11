@@ -11,12 +11,18 @@ importers:
       '@requestlab/config':
         specifier: workspace:*
         version: link:packages/config
+      '@requestlab/database':
+        specifier: workspace:*
+        version: link:packages/database
       '@types/node':
         specifier: ^22.15.0
         version: 22.20.1
       concurrently:
         specifier: ^9.2.1
         version: 9.2.4
+      dotenv:
+        specifier: ^16.6.1
+        version: 16.6.1
       eslint:
         specifier: ^9.34.0
         version: 9.39.5(jiti@2.7.0)

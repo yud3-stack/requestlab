@@ -141,6 +141,45 @@ describe("demo API scenarios", () => {
     await app.close();
   });
 
+  it("captures only the real target for each scenario wrapper", async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        sent.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response("{}", { status: 201 });
+      })
+    );
+    const wrappers = [
+      "/internal/demo/scenarios/order-error",
+      "/internal/demo/scenarios/login-error",
+      "/internal/demo/scenarios/slow-request"
+    ];
+    const app = createDemoApp({
+      logger: false,
+      requestLab: {
+        apiUrl: "http://requestlab.test",
+        apiKey: "rlk_demo",
+        environment: "development",
+        captureMode: "all",
+        ignorePaths: ["/health", ...wrappers]
+      }
+    });
+    await app.ready();
+
+    for (const wrapper of wrappers)
+      expect(
+        (await app.inject({ method: "POST", url: wrapper })).statusCode
+      ).toBeGreaterThanOrEqual(200);
+    await app.requestLab?.flush();
+
+    expect(sent.filter((event) => wrappers.includes(String(event.path)))).toHaveLength(0);
+    expect(sent.filter((event) => event.path === "/api/orders")).toHaveLength(1);
+    expect(sent.filter((event) => event.path === "/api/auth/login")).toHaveLength(1);
+    expect(sent.filter((event) => event.path === "/api/demo/slow")).toHaveLength(1);
+    await app.close();
+  });
+
   it("protects the server-side scenario trigger and accepts only predefined scenarios", async () => {
     const app = createDemoApp({
       logger: false,

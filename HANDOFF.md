@@ -23,6 +23,7 @@ RequestLab, gerçek uygulamalardaki API hatalarını kaydetmek, incelemek ve tes
 - `apps/demo-api` ürün, sipariş, login, slow request ve scenario endpointleriyle oluşturuldu.
 - Demo API SDK yapılandırması olmadan da çalışır; yapılandırıldığında başarılı, hatalı ve yavaş istekleri event olarak yakalar.
 - Node SDK `ignorePaths` ve `excludePaths` seçenekleriyle query string'i yok sayan exact path filtrelemesi destekler. Demo API, `REQUESTLAB_CAPTURE_MODE=all` korunarak Render'ın `/health` çağrılarını capture dışı bırakır; `/health-check`, ürünler, hata ve slow-request senaryoları capture edilmeye devam eder.
+- Demo API internal scenario wrapper path'leri de exact ignore listesinde tutulur; yalnızca gerçek `/api/orders`, `/api/auth/login` ve `/api/demo/slow` hedef eventleri yazılır. `pnpm demo:cleanup-health` varsayılan olarak dry-run'dır; yalnızca `--apply` ile tek `DEMO_PROJECT_SLUG` projesindeki exact `/health` event'leri ve ilişkili replay kayıtları transaction içinde temizlenir.
 - Demo API için idempotency, deterministic hata senaryoları ve SDK integration testleri eklendi.
 
 ## Aşama 4'te tamamlananlar
