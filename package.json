@@ -19,7 +19,7 @@
     "db:migrate": "corepack pnpm --filter @requestlab/database db:migrate",
     "db:seed": "corepack pnpm --filter @requestlab/database db:seed",
     "demo:cleanup": "tsx scripts/demo-cleanup.ts",
-    "demo:cleanup-health": "tsx scripts/demo-cleanup-health-cli.ts",
+    "demo:cleanup-health": "tsx scripts/demo-cleanup-health-cli.mts",
     "deploy:check": "node scripts/deploy-check.mjs",
     "format": "prettier --write ."
   },
