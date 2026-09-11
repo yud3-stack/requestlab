@@ -8,6 +8,9 @@ export default defineConfig({
   root: webRoot,
   envDir: webRoot,
   plugins: [react()],
+  build: {
+    assetsInlineLimit: 0
+  },
   server: {
     port: Number(process.env.WEB_PORT ?? 5173)
   }
