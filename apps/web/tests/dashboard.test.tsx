@@ -293,6 +293,11 @@ describe("dashboard", () => {
     await waitFor(() => expect(replayButton).not.toBeDisabled());
     fireEvent.click(replayButton);
     expect(await screen.findByRole("heading", { name: "Tekrar çalıştır" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Maskelenmiş hassas değerler replay sırasında yeniden kullanılamaz. Bu alanlar güvenli bir secret sağlayıcısı olmadan gönderilmez."
+      )
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Replay başlat" }));
     expect(await screen.findByText("Yan etki onayı gerekli.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("checkbox", { name: /Bu isteğin test ortamındaki verileri/ }));

@@ -15,7 +15,7 @@ This document describes the Aşama 6A production shape. No deployment, DNS chang
 
 The browser requests a short-lived API-issued demo session and keeps its bearer token in memory only. The API resolves the configured demo project and user server-side. The only public scenario names are `order-error`, `login-error`, and `slow-request`; the API calls the Demo API through an internal trigger secret. The browser cannot choose a URL, method, body, header, project, user, or environment.
 
-Production replay is limited to HTTPS hosts in `REPLAY_ALLOWED_HOSTS`, defaults to `demo.requestlab.yusufdere.com`, and preserves redirect, DNS/IP, dangerous-header, masking, idempotency, and response-size protections.
+Production replay is limited to HTTPS hosts in `REPLAY_ALLOWED_HOSTS`, defaults to `demo.requestlab.yusufdere.com`, and preserves redirect, DNS/IP, dangerous-header, masking, idempotency, and response-size protections. Replay body and query overrides are checked recursively; plaintext values under sensitive keys are rejected with `SENSITIVE_REPLAY_INPUT`, while `[REDACTED]` fields are omitted before persistence and execution. Login replays are expected to remain `401` because masked credentials cannot be replayed without a secure secret provider. The order replay path remains expected to transition from `500` to `201` in a test environment.
 
 ## Environment Map
 

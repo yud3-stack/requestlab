@@ -990,7 +990,7 @@ function ReplayForm({
             original={jsonText(event.requestBody)}
             error={jsonErrors.body}
             onChange={(value) => setValue("body", value)}
-            note="[REDACTED] alanlar gerçek değer değildir ve gönderilmez."
+            note="Maskelenmiş hassas değerler replay sırasında yeniden kullanılamaz. Bu alanlar güvenli bir secret sağlayıcısı olmadan gönderilmez."
           />
           {sideEffectMethods.has(method) && (
             <label className="confirm-row">

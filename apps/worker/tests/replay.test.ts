@@ -57,6 +57,47 @@ describe("replay worker execution", () => {
     expect(db.updates[1]?.data.responseBody).toEqual({ password: "[REDACTED]", ok: true });
   });
 
+  it("removes redacted and legacy sensitive request fields before sending an order replay", async () => {
+    const db = database();
+    db.replayRun.findUnique.mockResolvedValue({
+      id: "replay-1",
+      method: "POST",
+      targetUrl: "https://example.com/orders",
+      requestHeaders: { "x-safe": "yes", "x-api-key": "legacy-key" },
+      requestQuery: { page: "[REDACTED]", nested: { token: "legacy-token", keep: "yes" } },
+      requestBody: {
+        orderId: "order-1",
+        credentials: { password: "legacy-password", keep: true },
+        items: [{ secret: "[REDACTED]", sku: "sku-1" }]
+      },
+      environment: { type: "TEST" }
+    });
+    const fetch = vi.fn(async (url: URL, init?: RequestInit) => {
+      expect(url.search).toBe("?nested=%5Bobject+Object%5D");
+      expect(init?.method).toBe("POST");
+      expect(init?.headers).toEqual({ "x-safe": "yes", "content-type": "application/json" });
+      expect(JSON.parse(String(init?.body))).toEqual({
+        orderId: "order-1",
+        credentials: { keep: true },
+        items: [{ sku: "sku-1" }]
+      });
+      return new Response(JSON.stringify({ created: true }), {
+        status: 201,
+        headers: { "content-type": "application/json" }
+      });
+    });
+
+    await executeReplay(db, "replay-1", {
+      allowPrivate: false,
+      timeoutMs: 1000,
+      maxBytes: 1024,
+      fetch
+    });
+
+    expect(db.updates[1]?.data.status).toBe("SUCCEEDED");
+    expect(db.updates[1]?.data.statusCode).toBe(201);
+  });
+
   it("marks timeout as uncertain and limits response size", async () => {
     const timeoutDb = database();
     const timeoutFetch = vi.fn(

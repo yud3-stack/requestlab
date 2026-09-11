@@ -1,29 +1,6 @@
-const sensitiveKeys = new Set([
-  "authorization",
-  "cookie",
-  "setcookie",
-  "password",
-  "token",
-  "accesstoken",
-  "refreshtoken",
-  "secret",
-  "xrequestlabdemosecret",
-  "xrequestlabapikey",
-  "requestlabdemosecret",
-  "requestlabapikey",
-  "databaseurl",
-  "directurl",
-  "redisurl",
-  "apikey",
-  "creditcard",
-  "cvv"
-]);
+import { isSensitiveKey, REDACTED } from "@requestlab/shared";
 
-const redacted = "[REDACTED]";
-
-function keyName(value: string): string {
-  return value.toLowerCase().replace(/[-_]/g, "");
-}
+const redacted = REDACTED;
 
 export function maskSensitiveData<T>(input: T): T {
   if (Array.isArray(input)) {
@@ -32,7 +9,7 @@ export function maskSensitiveData<T>(input: T): T {
   if (input !== null && typeof input === "object") {
     const output: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(input)) {
-      output[key] = sensitiveKeys.has(keyName(key)) ? redacted : maskSensitiveData(value);
+      output[key] = isSensitiveKey(key) ? redacted : maskSensitiveData(value);
     }
     return output as T;
   }

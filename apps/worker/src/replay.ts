@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { isSensitiveKey, REDACTED, removeRedactedFields } from "@requestlab/shared";
 const blockedHeaders = new Set([
   "authorization",
   "proxy-authorization",
@@ -65,13 +66,14 @@ export async function executeReplay(
     if (options.allowedHosts?.length && !options.allowedHosts.includes(url.hostname.toLowerCase()))
       throw new Error("target host is not allowed");
     await validateResolvedTarget(url.hostname, options.allowPrivate);
-    const query = replay.requestQuery;
+    const query = removeRedactedFields(mask(replay.requestQuery));
     if (query && typeof query === "object" && !Array.isArray(query))
       for (const [key, value] of Object.entries(query)) url.searchParams.set(key, String(value));
     const headers = safeHeaders(replay.requestHeaders);
+    const requestBody = removeRedactedFields(mask(replay.requestBody));
     let body: string | undefined;
-    if (replay.requestBody !== undefined && replay.requestBody !== null) {
-      body = JSON.stringify(replay.requestBody);
+    if (requestBody !== undefined && requestBody !== null) {
+      body = JSON.stringify(requestBody);
       if (!Object.keys(headers).some((key) => key.toLowerCase() === "content-type"))
         headers["content-type"] = "application/json";
     }
@@ -177,30 +179,20 @@ function safeHeaders(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const result: Record<string, string> = {};
   for (const [key, raw] of Object.entries(value))
-    if (!blockedHeaders.has(key.toLowerCase()) && typeof raw === "string" && raw !== "[REDACTED]")
+    if (
+      !blockedHeaders.has(key.toLowerCase()) &&
+      !isSensitiveKey(key) &&
+      typeof raw === "string" &&
+      raw !== REDACTED
+    )
       result[key] = raw;
   return result;
 }
-const sensitive = new Set([
-  "authorization",
-  "cookie",
-  "set-cookie",
-  "password",
-  "token",
-  "secret",
-  "apikey",
-  "api-key",
-  "accesstoken",
-  "refreshtoken"
-]);
 function mask(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(mask);
   if (value && typeof value === "object")
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        key,
-        sensitive.has(key.toLowerCase()) ? "[REDACTED]" : mask(item)
-      ])
+      Object.entries(value).map(([key, item]) => [key, isSensitiveKey(key) ? REDACTED : mask(item)])
     );
   return value;
 }

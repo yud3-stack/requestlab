@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
-import { CreateReplayInputSchema } from "@requestlab/shared";
+import {
+  CreateReplayInputSchema,
+  hasSensitiveReplayInput,
+  removeRedactedFields
+} from "@requestlab/shared";
 import { requireProjectMember } from "../../lib/auth.js";
 import { AppError, validationError } from "../../lib/errors.js";
 import { maskSensitiveData } from "../../lib/masking.js";
@@ -45,6 +49,12 @@ export function registerReplayRoutes(app: FastifyInstance, context: AppContext):
         throw new AppError("REPLAY_NOT_ALLOWED", "Viewer users cannot create replays", 403);
       const parsed = CreateReplayInputSchema.safeParse(request.body);
       if (!parsed.success) throw validationError("Invalid replay input", parsed.error.issues);
+      if (hasSensitiveReplayInput(parsed.data.query) || hasSensitiveReplayInput(parsed.data.body))
+        throw new AppError(
+          "SENSITIVE_REPLAY_INPUT",
+          "Sensitive values cannot be provided in replay query or body",
+          400
+        );
       if (!context.replayQueue)
         throw new AppError("REPLAY_UNAVAILABLE", "Replay worker is unavailable", 503);
       const event = await context.db.requestEvent.findFirst({ where: { id: eventId, projectId } });
@@ -174,10 +184,12 @@ function safeHeaders(value: unknown): Record<string, string> {
       continue;
     output[key] = raw;
   }
-  return maskSensitiveData(output) as Record<string, string>;
+  return (removeRedactedFields(maskSensitiveData(output)) ?? {}) as Record<string, string>;
 }
 function toJson(value: unknown): Prisma.InputJsonValue | undefined {
-  return value === undefined ? undefined : (maskSensitiveData(value) as Prisma.InputJsonValue);
+  if (value === undefined) return undefined;
+  const sanitized = removeRedactedFields(maskSensitiveData(value));
+  return sanitized === undefined ? undefined : (sanitized as Prisma.InputJsonValue);
 }
 function positive(value: string | undefined, fallback: number): number {
   const n = Number(value ?? fallback);

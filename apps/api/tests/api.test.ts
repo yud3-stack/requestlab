@@ -658,4 +658,94 @@ describe("replay API authorization", () => {
     expect(updated).toBe(true);
     await app.close();
   });
+
+  it("rejects nested plaintext sensitive query and body overrides before persistence", async () => {
+    let created = false;
+    let queued = 0;
+    const app = createApp({
+      db: dbMock({
+        environment: {
+          findUnique: async () => ({ ...environment, baseUrl: "https://example.com" })
+        },
+        replayRun: {
+          ...dbMock().replayRun,
+          create: async () => {
+            created = true;
+            return dbMock().replayRun.create({} as never);
+          }
+        }
+      }),
+      replayQueue: {
+        add: async () => {
+          queued += 1;
+        },
+        close: async () => undefined
+      },
+      config: { nodeEnv: "test", apiPort: 3001 }
+    });
+
+    for (const override of [
+      { query: { filters: [{ apiKey: "live-api-key" }] } },
+      { body: { credentials: { profile: { password: "new-password" } } } }
+    ]) {
+      const response = await app.inject({
+        ...replayRequest,
+        payload: { ...replayRequest.payload, ...override }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe("SENSITIVE_REPLAY_INPUT");
+    }
+
+    expect(created).toBe(false);
+    expect(queued).toBe(0);
+    await app.close();
+  });
+
+  it("removes redacted replay fields before storing the run", async () => {
+    let saved: Record<string, unknown> | undefined;
+    const base = dbMock();
+    const baseCreate = base.replayRun.create as unknown as (
+      args: unknown
+    ) => Promise<Record<string, unknown>>;
+    const app = createApp({
+      db: dbMock({
+        environment: {
+          findUnique: async () => ({ ...environment, baseUrl: "https://example.com" })
+        },
+        requestEvent: {
+          findFirst: async () => ({
+            ...event,
+            query: {
+              page: "[REDACTED]",
+              nested: { token: "[REDACTED]", keep: "yes" }
+            },
+            requestHeaders: { "x-api-key": "[REDACTED]", "x-safe": "yes" },
+            requestBody: {
+              user: { password: "[REDACTED]", name: "Ada" },
+              items: [{ secret: "[REDACTED]", id: 1 }, { ok: true }]
+            }
+          })
+        },
+        replayRun: {
+          ...base.replayRun,
+          create: async (args: { data: Record<string, unknown> }) => {
+            saved = args.data;
+            return baseCreate(args);
+          }
+        }
+      }),
+      replayQueue: queue,
+      config: { nodeEnv: "test", apiPort: 3001 }
+    });
+
+    const response = await app.inject(replayRequest);
+    expect(response.statusCode).toBe(202);
+    expect(saved?.requestHeaders).toEqual({ "x-safe": "yes" });
+    expect(saved?.requestQuery).toEqual({ nested: { keep: "yes" } });
+    expect(saved?.requestBody).toEqual({
+      user: { name: "Ada" },
+      items: [{ id: 1 }, { ok: true }]
+    });
+    await app.close();
+  });
 });

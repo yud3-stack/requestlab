@@ -121,6 +121,7 @@ export type ApiErrorResponse = {
       | "REPLAY_NOT_FOUND"
       | "REPLAY_TARGET_INVALID"
       | "REPLAY_DUPLICATE_JOB"
+      | "SENSITIVE_REPLAY_INPUT"
       | "INTERNAL_ERROR";
     message: string;
     details: unknown;
@@ -154,6 +155,56 @@ export const CreateReplayInputSchema = z.object({
 });
 export type CreateReplayInput = z.infer<typeof CreateReplayInputSchema>;
 
+export const REDACTED = "[REDACTED]";
+
+const sensitiveKeys = new Set([
+  "authorization",
+  "cookie",
+  "setcookie",
+  "password",
+  "token",
+  "accesstoken",
+  "refreshtoken",
+  "secret",
+  "xrequestlabdemosecret",
+  "xrequestlabapikey",
+  "requestlabdemosecret",
+  "requestlabapikey",
+  "databaseurl",
+  "directurl",
+  "redisurl",
+  "apikey",
+  "creditcard",
+  "cvv"
+]);
+
+export function isSensitiveKey(value: string): boolean {
+  return sensitiveKeys.has(value.toLowerCase().replace(/[-_]/g, ""));
+}
+
+export function hasSensitiveReplayInput(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasSensitiveReplayInput);
+  if (!value || typeof value !== "object") return false;
+  return Object.entries(value).some(([key, child]) => {
+    if (isSensitiveKey(key)) return child !== REDACTED;
+    return hasSensitiveReplayInput(child);
+  });
+}
+
+export function removeRedactedFields(value: unknown): unknown {
+  if (value === REDACTED) return undefined;
+  if (Array.isArray(value))
+    return value.map(removeRedactedFields).filter((item) => item !== undefined);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .map(([key, child]) => [key, removeRedactedFields(child)] as const)
+        .filter(([, child]) => child !== undefined)
+    );
+  }
+  return value;
+}
+
 export type ReplaySummary = {
   id: string;
   originalEventId: string;
@@ -183,4 +234,5 @@ export type ReplayErrorCode =
   | "REPLAY_NOT_ALLOWED"
   | "REPLAY_NOT_FOUND"
   | "REPLAY_TARGET_INVALID"
-  | "REPLAY_DUPLICATE_JOB";
+  | "REPLAY_DUPLICATE_JOB"
+  | "SENSITIVE_REPLAY_INPUT";
